@@ -1,0 +1,158 @@
+import { useEffect, useState } from "react";
+import { Anchor, Bookmark, PlusCircle, ShieldAlert, Menu, LogOut } from "lucide-react";
+import { SearchBar } from "./SearchBar";
+import { navigate } from "../lib/router";
+import { checkIsAdmin, logoutAdmin } from "../lib/adminAuth";
+import { AdminLoginModal } from "./AdminLoginModal";
+
+type HeaderProps = {
+  onToggleMobileMenu?: () => void;
+};
+
+export function Header({ onToggleMobileMenu }: HeaderProps) {
+  const [isAdmin, setIsAdmin] = useState(checkIsAdmin());
+  const [showAdminModal, setShowAdminModal] = useState(false);
+
+  useEffect(() => {
+    const handleHashCheck = () => {
+      if (window.location.hash === "#admin") {
+        if (checkIsAdmin()) {
+          window.history.replaceState(null, "", window.location.pathname);
+        } else {
+          setShowAdminModal(true);
+        }
+      }
+    };
+
+    const handleSessionChange = () => {
+      setIsAdmin(checkIsAdmin());
+    };
+
+    handleHashCheck();
+    window.addEventListener("hashchange", handleHashCheck);
+    window.addEventListener("admin_session_changed", handleSessionChange);
+
+    return () => {
+      window.removeEventListener("hashchange", handleHashCheck);
+      window.removeEventListener("admin_session_changed", handleSessionChange);
+    };
+  }, []);
+
+  const handleAdminSuccess = () => {
+    setShowAdminModal(false);
+    setIsAdmin(true);
+    if (window.location.hash === "#admin") {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowAdminModal(false);
+    if (window.location.hash === "#admin") {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  };
+
+  const handleLogout = () => {
+    logoutAdmin();
+    // Review panel-la irundhu logout panna safe-ah Home page-ku redirect aagidum
+    if (window.location.pathname.includes("admin-pending") || window.location.search.includes("admin-pending")) {
+      navigate({ name: "home" });
+    } else {
+      // Router state sync-kaga fallback home navigation
+      const currentPath = window.location.pathname;
+      if (currentPath === "/admin-pending") {
+        navigate({ name: "home" });
+      }
+    }
+  };
+
+  return (
+    <>
+      <header className="sticky top-0 z-30 bg-marine-dark/95 backdrop-blur-md border-b border-marine-border">
+        <div className="flex items-center justify-between px-4 lg:px-8 h-16 gap-4">
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={onToggleMobileMenu}
+              className="md:hidden p-2 text-marine-muted hover:text-marine-accent focus:outline-none rounded-lg cursor-pointer"
+              title="Open Departments"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => (window.location.href = "/")}
+              className="flex items-center gap-2 text-marine-accent font-bold text-lg tracking-tight hover:opacity-90 transition cursor-pointer"
+              title="Return to Home Dashboard"
+            >
+              <Anchor className="h-6 w-6" />
+              <span className="text-marine-text font-extrabold">MARINE FIX</span>
+            </button>
+          </div>
+
+          <div className="hidden md:block flex-1 max-w-xl mx-4">
+            <SearchBar />
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => navigate({ name: "add-guide" })}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-marine-card text-marine-text border border-marine-border hover:border-marine-accent/50 transition cursor-pointer"
+              title="Post a Troubleshooting Guide"
+            >
+              <PlusCircle className="h-4 w-4 text-marine-accent" />
+              <span>Post Guide</span>
+            </button>
+
+            {/* Admin Controls */}
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigate({ name: "admin-pending" })}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/15 transition cursor-pointer"
+                  title="Review pending submissions"
+                >
+                  <ShieldAlert className="h-4 w-4" />
+                  <span>Review</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="p-1.5 rounded-lg text-xs bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition cursor-pointer"
+                  title="Exit Admin Mode"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={() => navigate({ name: "bookmarks" })}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-marine-card text-marine-text border border-marine-border hover:border-marine-accent/50 transition cursor-pointer"
+              title="Saved Bookmarks"
+            >
+              <Bookmark className="h-4 w-4 text-marine-accent" />
+              <span>Saved</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="md:hidden px-4 pb-3">
+          <SearchBar />
+        </div>
+      </header>
+
+      <AdminLoginModal
+        isOpen={showAdminModal}
+        onClose={handleCloseModal}
+        onSuccess={handleAdminSuccess}
+      />
+    </>
+  );
+}

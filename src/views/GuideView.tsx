@@ -1,0 +1,584 @@
+import { useEffect, useState } from "react";
+import {
+  ChevronRight,
+  ArrowLeft,
+  Bookmark,
+  BookmarkCheck,
+  ShieldAlert,
+  Wrench,
+  AlertTriangle,
+  Loader2,
+  AlertCircle,
+  ImageIcon,
+  Mail,
+  FileText,
+  ExternalLink,
+  Trash2,
+  Printer,
+} from "lucide-react";
+import type { GuideWithRelations } from "../types";
+import { fetchGuideById, addBookmark, removeBookmark } from "../lib/queries";
+import { saveGuideOffline, removeGuideOffline, getOfflineGuideById } from "../lib/offlineStorage";
+import { navigate } from "../lib/router";
+import { Lightbox } from "../components/Lightbox";
+import { checkIsAdmin } from "../lib/adminAuth";
+
+type Props = {
+  guideId: string;
+  isBookmarked: boolean;
+  onBookmarkChange: (id: string, saved: boolean) => void;
+};
+
+export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
+  const [guide, setGuide] = useState<GuideWithRelations | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [savingBookmark, setSavingBookmark] = useState(false);
+  const [deletingGuide, setDeletingGuide] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [isAdmin, setIsAdmin] = useState(checkIsAdmin());
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError(null);
+
+    fetchGuideById(guideId)
+      .then((g) => {
+        if (active) {
+          setGuide(g);
+          if (isBookmarked && g) {
+            saveGuideOffline(g);
+          }
+        }
+      })
+      .catch((e) => {
+        if (active) {
+          const cached = getOfflineGuideById(guideId);
+          if (cached) {
+            setGuide(cached);
+          } else {
+            setError(e.message);
+          }
+        }
+      })
+      .finally(() => active && setLoading(false));
+
+    const handleSessionChange = () => setIsAdmin(checkIsAdmin());
+    window.addEventListener("admin_session_changed", handleSessionChange);
+
+    return () => {
+      active = false;
+      window.removeEventListener("admin_session_changed", handleSessionChange);
+    };
+  }, [guideId, isBookmarked]);
+
+  async function toggleBookmark() {
+    if (!guide) return;
+    setSavingBookmark(true);
+    setError(null);
+    try {
+      if (isBookmarked) {
+        await removeBookmark(guide.id);
+        removeGuideOffline(guide.id);
+        onBookmarkChange(guide.id, false);
+      } else {
+        await addBookmark(guide.id);
+        saveGuideOffline(guide);
+        onBookmarkChange(guide.id, true);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSavingBookmark(false);
+    }
+  }
+
+  async function handleDeleteGuide() {
+    if (!confirm("Are you sure you want to permanently delete this approved guide from the database?")) return;
+    try {
+      setDeletingGuide(true);
+      const res = await fetch(`/api/guides?id=${guideId}`, { method: "DELETE" });
+      if (res.ok) {
+        removeGuideOffline(guideId);
+        alert("Guide deleted permanently!");
+        window.location.href = "/";
+      } else {
+        alert("Failed to delete guide from database.");
+      }
+    } catch (err) {
+      alert("Error deleting guide.");
+    } finally {
+      setDeletingGuide(false);
+    }
+  }
+
+  const handlePrintSOP = () => {
+    window.print();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24 text-marine-muted">
+        <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading guide...
+      </div>
+    );
+  }
+  if (error && !guide) {
+    return (
+      <div className="p-10 text-center">
+        <AlertCircle className="h-10 w-10 text-marine-error mx-auto mb-3" />
+        <p className="text-marine-error">{error}</p>
+      </div>
+    );
+  }
+  if (!guide) {
+    return (
+      <div className="p-10 text-center text-marine-muted">Guide not found.</div>
+    );
+  }
+
+  const equipment = guide.equipment;
+
+  const parseAttachment = (val: any) => {
+    let url = "";
+    let isPdf = false;
+    let name = "";
+    let stepNum = 0;
+
+    if (typeof val === "string" && val.trim()) {
+      url = val.trim();
+      isPdf = url.toLowerCase().includes(".pdf") || url.startsWith("data:application/pdf");
+    } else if (val && typeof val === "object") {
+      url = val.url || val.image_url || val.image || val.publicUrl || "";
+      isPdf = Boolean(val.isPdf) || url.toLowerCase().includes(".pdf") || url.startsWith("data:application/pdf");
+      name = val.name || val.caption || "";
+      stepNum = val.step_number || 0;
+    }
+
+    if (!stepNum && url) {
+      const match = url.match(/step(\d+)_/i);
+      if (match && match[1]) {
+        stepNum = parseInt(match[1], 10);
+      }
+    }
+
+    return { url, isPdf, name, stepNum };
+  };
+
+  const allAttachments = ([] as any[])
+    .concat(guide.images || [], (guide as any).image_urls || [])
+    .map(parseAttachment)
+    .filter((item, idx, self) => item.url && self.findIndex((t) => t.url === item.url) === idx);
+
+  const getStepAttachments = (step: any, stepIndexNum: number) => {
+    let stepImgs = step.images || step.step_images || [];
+    const parsedStepImgs = (Array.isArray(stepImgs) ? stepImgs : [])
+      .map(parseAttachment)
+      .filter((i: any) => i.url);
+
+    if (parsedStepImgs.length > 0) return parsedStepImgs;
+
+    return allAttachments.filter(
+      (att) => att.stepNum === stepIndexNum || att.url.toLowerCase().includes(`step${stepIndexNum}_`)
+    );
+  };
+
+  const overallAttachments = allAttachments.filter((att) => {
+    if (att.url.toLowerCase().includes("overall_")) return true;
+    if (att.stepNum > 0) return false;
+    if (/step\d+_/i.test(att.url)) return false;
+    return true;
+  });
+
+  const allStepImages: { url: string; name: string }[] = [];
+  if (guide.steps && guide.steps.length > 0) {
+    guide.steps.forEach((step: any, idx: number) => {
+      const stepNum = step.step_number || idx + 1;
+      const stepAtts = getStepAttachments(step, stepNum);
+      stepAtts.forEach((att) => {
+        if (!att.isPdf && att.url && !allStepImages.some((x) => x.url === att.url)) {
+          allStepImages.push({ url: att.url, name: att.name || `Step ${stepNum} Schematic` });
+        }
+      });
+    });
+  }
+
+  const overallOnlyImages = overallAttachments
+    .filter((i) => !i.isPdf)
+    .map((i) => ({ url: i.url, name: i.name || "Schematic" }));
+
+  const combinedImageGallery = [...allStepImages, ...overallOnlyImages].filter(
+    (item, index, self) => index === self.findIndex((t) => t.url === item.url)
+  );
+
+  const lightboxUrls = combinedImageGallery.map((i) => i.url);
+  const lightboxCaptions = combinedImageGallery.map((i) => i.name);
+
+  function openLightboxByUrl(targetUrl: string) {
+    const idx = lightboxUrls.indexOf(targetUrl);
+    if (idx !== -1) {
+      setLightboxIndex(idx);
+    } else {
+      lightboxUrls.push(targetUrl);
+      lightboxCaptions.push("Schematic Drawing");
+      setLightboxIndex(lightboxUrls.length - 1);
+    }
+  }
+
+  function nextImg() {
+    setLightboxIndex((i) => (i === null ? 0 : (i + 1) % lightboxUrls.length));
+  }
+  function prevImg() {
+    setLightboxIndex((i) => (i === null ? 0 : (i - 1 + lightboxUrls.length) % lightboxUrls.length));
+  }
+
+  const authorEmail = (guide as any).author_email;
+
+  return (
+    <div className="animate-fade-in print:bg-white print:text-black w-full">
+      {/* Navigation Breadcrumb */}
+      <div className="flex items-center gap-1 text-sm text-marine-muted px-6 py-3 lg:px-10 border-b border-marine-border flex-wrap print:hidden">
+        <button
+          onClick={() => navigate({ name: "home" })}
+          className="hover:text-marine-accent transition cursor-pointer"
+        >
+          Home
+        </button>
+        {equipment && (
+          <>
+            <ChevronRight className="h-3.5 w-3.5" />
+            <button
+              onClick={() => navigate({ name: "equipment", id: equipment.id })}
+              className="hover:text-marine-accent transition cursor-pointer"
+            >
+              {equipment.name}
+            </button>
+          </>
+        )}
+        <ChevronRight className="h-3.5 w-3.5" />
+        <span className="text-marine-text line-clamp-1">{guide.title}</span>
+      </div>
+
+      {/* Main Content Area */}
+      <article className="px-6 py-8 lg:px-10 w-full max-w-6xl print:max-w-full print:px-0 print:py-2">
+        <button
+          onClick={() => window.history.back()}
+          className="flex items-center gap-1 text-sm text-marine-muted hover:text-marine-accent transition mb-4 cursor-pointer print:hidden"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back
+        </button>
+
+        {error && (
+          <div className="flex items-center gap-2 text-marine-error text-sm p-3 rounded-lg bg-marine-error/10 border border-marine-error/30 mb-4 print:hidden">
+            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+          </div>
+        )}
+
+        <div className="flex items-start justify-between gap-4 mb-3 flex-wrap">
+          <h1 className="text-2xl lg:text-3xl font-bold text-marine-text print:text-black leading-tight flex-1 break-words break-all">
+            {guide.title}
+          </h1>
+
+          <div className="flex items-center gap-2 shrink-0 print:hidden">
+            <button
+              type="button"
+              onClick={handlePrintSOP}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-medium text-xs bg-marine-card text-marine-text border border-marine-border hover:border-marine-accent/50 transition cursor-pointer"
+              title="Print SOP / Save PDF"
+            >
+              <Printer className="h-4 w-4 text-sky-400" />
+              <span>Print SOP</span>
+            </button>
+
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleDeleteGuide}
+                disabled={deletingGuide}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-medium text-xs bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition cursor-pointer"
+                title="Permanently delete from database"
+              >
+                {deletingGuide ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+                <span>Delete Guide</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={toggleBookmark}
+              disabled={savingBookmark}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition border cursor-pointer ${
+                isBookmarked
+                  ? "bg-marine-accent/15 text-marine-accent border-marine-accent/40"
+                  : "bg-marine-card text-marine-text border-marine-border hover:border-marine-accent/60"
+              }`}
+            >
+              {savingBookmark ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : isBookmarked ? (
+                <BookmarkCheck className="h-4 w-4 text-marine-accent" />
+              ) : (
+                <Bookmark className="h-4 w-4" />
+              )}
+              {isBookmarked ? "Saved Offline" : "Save Offline"}
+            </button>
+          </div>
+        </div>
+
+        {authorEmail && (
+          <div className="mb-6 flex items-center gap-2">
+            <span className="text-xs text-marine-muted print:text-slate-600 font-medium">Author Contact:</span>
+            <a
+              href={`mailto:${authorEmail}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 print:text-sky-700 text-xs font-semibold hover:bg-sky-500/20 transition"
+            >
+              <Mail className="h-3.5 w-3.5" />
+              {authorEmail}
+            </a>
+          </div>
+        )}
+
+        {guide.symptom && (
+          <div className="mb-6 p-4 rounded-lg bg-marine-base/60 print:bg-slate-100 border border-marine-border print:border-slate-300 w-full overflow-hidden">
+            <div className="text-xs uppercase tracking-wider text-marine-muted font-semibold mb-1">
+              Symptom
+            </div>
+            <p className="text-marine-text print:text-black break-words break-all">{guide.symptom}</p>
+          </div>
+        )}
+
+        {guide.safety_ppe && guide.safety_ppe.length > 0 && (
+          <div className="mb-6 p-4 rounded-xl bg-marine-warn/10 print:bg-amber-50 border-2 border-marine-warn/40 print:border-amber-400 w-full">
+            <div className="flex items-center gap-2 text-marine-warn print:text-amber-800 font-semibold mb-2">
+              <ShieldAlert className="h-5 w-5" />
+              <span>Safety &amp; PPE — Isolation Required</span>
+            </div>
+            <p className="text-sm text-marine-warn/90 print:text-amber-900 mb-3">
+              Ensure the following PPE is worn and isolation is confirmed before beginning work.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {guide.safety_ppe.map((p) => (
+                <span
+                  key={p}
+                  className="inline-flex items-center text-sm px-3 py-1.5 rounded-full bg-marine-warn/15 print:bg-amber-200 text-marine-warn print:text-amber-900 border border-marine-warn/30 print:border-amber-400 break-all"
+                >
+                  {p}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {guide.tools_required && guide.tools_required.length > 0 && (
+          <div className="mb-6 p-4 rounded-xl bg-marine-card print:bg-slate-100 border border-marine-border print:border-slate-300 w-full">
+            <div className="flex items-center gap-2 text-marine-accent print:text-sky-800 font-semibold mb-2">
+              <Wrench className="h-5 w-5" />
+              <span>Tools Required</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {guide.tools_required.map((t) => (
+                <span
+                  key={t}
+                  className="inline-flex items-center text-sm px-3 py-1.5 rounded-full bg-marine-accent/10 print:bg-sky-200 text-marine-accent print:text-sky-900 border border-marine-accent/30 print:border-sky-400 break-all"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Introduction / Overview Box with Heading & Icon */}
+        {guide.introduction && (
+          <div className="mb-6 p-4 rounded-xl bg-marine-card print:bg-slate-100 border border-marine-border print:border-slate-300 w-full overflow-hidden">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-marine-muted print:text-slate-600 mb-2">
+              <FileText className="h-4 w-4 text-sky-400 shrink-0" />
+              <span>Introduction / Overview</span>
+            </div>
+            <p className="text-sm text-marine-text print:text-slate-800 leading-relaxed whitespace-pre-line break-words break-all">
+              {guide.introduction}
+            </p>
+          </div>
+        )}
+
+        {/* Diagnostic Steps Section */}
+        {guide.steps && guide.steps.length > 0 && (
+          <section className="mb-8 space-y-4 w-full">
+            <h2 className="text-xl font-bold text-marine-text print:text-black flex items-center gap-2">
+              Diagnostic Steps
+            </h2>
+            <div className="space-y-4 w-full">
+              {guide.steps.map((step: any, index: number) => {
+                const stepNum = step.step_number || index + 1;
+                const stepAttachments = getStepAttachments(step, stepNum);
+
+                return (
+                  <div
+                    key={step.id || index}
+                    className="rounded-xl border border-marine-border print:border-slate-300 bg-marine-card print:bg-white p-5 space-y-4 shadow-sm w-full overflow-hidden"
+                  >
+                    {/* Step Title Header Block */}
+                    <div className="flex items-start gap-3">
+                      <span className="flex items-center justify-center h-8 w-8 rounded-full bg-marine-accent print:bg-slate-800 text-marine-base print:text-white font-bold text-sm shrink-0 mt-0.5 shadow-sm">
+                        {stepNum}
+                      </span>
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-400 print:text-slate-600 block">
+                          Step {stepNum} Action
+                        </span>
+                        <h3 className="text-base font-semibold text-marine-text print:text-black leading-snug break-words break-all">
+                          {step.title || (typeof step === "string" ? step : `Diagnostic Step ${stepNum}`)}
+                        </h3>
+                      </div>
+                    </div>
+
+                    {/* Step Instruction Box */}
+                    {step.instruction && (
+                      <div className="bg-marine-dark/70 print:bg-slate-50 border border-marine-border/80 print:border-slate-200 rounded-xl p-4 sm:ml-11 overflow-hidden">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-marine-muted print:text-slate-500 block mb-1.5">
+                          Instruction &amp; Procedure
+                        </span>
+                        <p className="text-sm text-marine-text print:text-slate-800 leading-relaxed whitespace-pre-line break-words break-all">
+                          {step.instruction}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Caution / Warning Box */}
+                    {(step.warning || step.tip) && (
+                      <div className="bg-marine-warn/10 print:bg-amber-50 border border-marine-warn/30 print:border-amber-300 rounded-xl p-4 sm:ml-11 flex items-start gap-3 overflow-hidden">
+                        <AlertTriangle className="h-5 w-5 text-marine-warn print:text-amber-600 shrink-0 mt-0.5" />
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-marine-warn print:text-amber-700 block">
+                            Caution / Safety Note
+                          </span>
+                          <p className="text-xs text-marine-warn/90 print:text-amber-900 leading-relaxed font-medium break-words break-all">
+                            {step.warning || step.tip}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Step-specific PDF/Image Attachments */}
+                    {stepAttachments.length > 0 && (
+                      <div className="sm:ml-11 pt-3 border-t border-marine-border/60 print:border-slate-300">
+                        <span className="text-[11px] font-bold text-sky-400 print:text-slate-600 uppercase tracking-wider block mb-2.5 flex items-center gap-1.5">
+                          <ImageIcon className="h-3.5 w-3.5" /> Step {stepNum} Schematic / Drawing:
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {stepAttachments.map((parsed: any, attIdx: number) => (
+                            <div
+                              key={attIdx}
+                              className="p-3 bg-marine-dark/90 print:bg-slate-100 rounded-xl border border-marine-border print:border-slate-300 flex items-center justify-between text-xs"
+                            >
+                              {parsed.isPdf ? (
+                                <div className="flex items-center justify-between w-full">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <FileText className="h-5 w-5 text-rose-400 shrink-0" />
+                                    <span
+                                      className="text-xs font-semibold text-marine-text print:text-black truncate max-w-[140px]"
+                                      title={parsed.name}
+                                    >
+                                      {parsed.name || `Step ${stepNum} Document`}
+                                    </span>
+                                  </div>
+                                  <a
+                                    href={parsed.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-500/20 text-rose-300 print:text-rose-700 hover:bg-rose-500/30 border border-rose-500/30 rounded-lg text-[11px] font-bold transition shrink-0"
+                                  >
+                                    <ExternalLink className="h-3 w-3" /> View PDF
+                                  </a>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openLightboxByUrl(parsed.url)}
+                                  className="group relative w-full flex items-center justify-center bg-black/80 rounded-lg overflow-hidden max-h-48 border border-marine-border hover:border-marine-accent/60 transition cursor-pointer p-1"
+                                  title="Click to Zoom Fullscreen"
+                                >
+                                  <img
+                                    src={parsed.url}
+                                    alt={`Step ${stepNum}`}
+                                    className="max-h-44 object-contain rounded group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {overallAttachments.length > 0 && (
+          <section className="mb-8 w-full">
+            <h2 className="text-xl font-bold text-marine-text print:text-black mb-1">
+              Overall Schematics &amp; Diagrams
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {overallAttachments.map((item: any, i: number) => (
+                <div
+                  key={i}
+                  className="rounded-xl overflow-hidden border border-marine-border print:border-slate-300 bg-marine-dark print:bg-slate-50 p-3 flex flex-col justify-between"
+                >
+                  {item.isPdf ? (
+                    <div className="flex flex-col items-center justify-center text-center space-y-2 p-4 w-full">
+                      <div className="p-3 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                        <FileText className="h-8 w-8" />
+                      </div>
+                      <div>
+                        <span
+                          className="text-xs font-bold text-marine-text print:text-black block truncate max-w-[200px]"
+                          title={item.name}
+                        >
+                          {item.name || "PDF Schematic Document"}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openLightboxByUrl(item.url)}
+                      className="group relative rounded-lg overflow-hidden border border-marine-border hover:border-marine-accent/60 transition w-full aspect-video bg-marine-base cursor-pointer"
+                      title="Click to Zoom Fullscreen"
+                    >
+                      <img
+                        src={item.url}
+                        alt={item.name || "Schematic"}
+                        loading="lazy"
+                        className="h-full w-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
+                      />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </article>
+
+      {lightboxIndex !== null && lightboxUrls.length > 0 && (
+        <Lightbox
+          urls={lightboxUrls}
+          captions={lightboxCaptions}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onPrev={prevImg}
+          onNext={nextImg}
+        />
+      )}
+    </div>
+  );
+}
