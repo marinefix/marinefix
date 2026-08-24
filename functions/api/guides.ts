@@ -50,14 +50,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
       return Response.json(formatted);
     }
 
-    // 2. Admin Pending Guides list
+    // 2. Admin Pending Guides list (Strictly pending only)
     if (pendingOnly) {
       const { results } = await context.env.DB.prepare(
         `SELECT g.*, 
                 json_object('id', e.id, 'name', e.name, 'slug', e.slug) as equipment 
          FROM guides g 
          LEFT JOIN equipment e ON g.equipment_id = e.id 
-         WHERE g.is_approved = 0 OR g.status = 'pending' 
+         WHERE g.status = 'pending' AND g.is_approved = 0
          ORDER BY g.created_at DESC`
       ).all();
 

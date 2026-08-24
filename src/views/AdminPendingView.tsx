@@ -14,7 +14,7 @@ import {
   Phone,
   ExternalLink,
 } from "lucide-react";
-import { getPendingGuides, approveGuide, rejectGuide, fetchGuideById } from "../lib/queries";
+import { getPendingGuides, approveGuide, fetchGuideById } from "../lib/queries";
 import type { Equipment, Guide, Category } from "../types";
 import { Lightbox } from "../components/Lightbox";
 
@@ -73,24 +73,27 @@ export function AdminPendingView(_props: Props = {}) {
     }
   }
 
+  // Reject panna permanent-a delete aagidum (Reload pannalum thirumba varaadhu)
   async function handleReject(id: string) {
-    if (!confirm("Are you sure you want to reject this guide?")) return;
+    if (!confirm("Are you sure you want to permanently reject & delete this guide?")) return;
     try {
-      await rejectGuide(id);
-      setPendingGuides((prev) => prev.filter((g) => g.id !== id));
-      if (selectedGuide?.id === id) setSelectedGuide(null);
-      alert("Guide Rejected!");
+      const res = await fetch(`/api/guides?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setPendingGuides((prev) => prev.filter((g) => g.id !== id));
+        if (selectedGuide?.id === id) setSelectedGuide(null);
+        alert("Guide Rejected!");
+      } else {
+        alert("Failed to reject guide.");
+      }
     } catch (err) {
       alert("Error rejecting guide");
     }
   }
 
-  // Helper to parse attachment details & extract step numbers
   const parseAttachment = (val: any) => {
     let url = "";
     let isPdf = false;
     let name = "";
-    let stepNum = 0;
 
     if (typeof val === "string" && val.trim()) {
       url = val.trim();
@@ -99,81 +102,39 @@ export function AdminPendingView(_props: Props = {}) {
       url = val.url || val.image_url || val.image || val.publicUrl || "";
       isPdf = Boolean(val.isPdf) || url.toLowerCase().includes(".pdf") || url.startsWith("data:application/pdf");
       name = val.name || val.caption || "";
-      stepNum = val.step_number || 0;
     }
 
-    if (!stepNum && url) {
-      const match = url.match(/step(\d+)_/i);
-      if (match && match[1]) {
-        stepNum = parseInt(match[1], 10);
-      }
-    }
-
-    return { url, isPdf, name, stepNum };
-  };
-
-  const getGuideAttachments = (g: any): { url: string; isPdf: boolean; name?: string; stepNum: number }[] => {
-    if (!g) return [];
-    const items: { url: string; isPdf: boolean; name?: string; stepNum: number }[] = [];
-
-    const checkAndAdd = (val: any) => {
-      const parsed = parseAttachment(val);
-      if (parsed.url && !items.some((item) => item.url === parsed.url)) {
-        items.push(parsed);
-      }
-    };
-
-    ["images", "guide_images", "image_urls", "photos"].forEach((key) => {
-      if (Array.isArray(g[key])) {
-        g[key].forEach((item: any) => checkAndAdd(item));
-      }
-    });
-
-    ["image_url", "image", "photo_url", "primary_image"].forEach((key) => {
-      checkAndAdd(g[key]);
-    });
-
-    return items;
+    return { url, isPdf, name };
   };
 
   const stepsList = selectedGuide?.steps || selectedGuide?.guide_steps || [];
-  const allAttachments = getGuideAttachments(selectedGuide);
 
-  // Get attachments belonging strictly to a specific step
-  const getStepAttachments = (step: any, stepIndexNum: number) => {
+  // 1. Get attachments belonging ONLY to this specific step
+  const getStepAttachments = (step: any) => {
     let stepImgs = step.images || step.step_images || step.uploadItems || [];
-
-    const parsedStepImgs: any[] = [];
-    if (Array.isArray(stepImgs) && stepImgs.length > 0) {
-      stepImgs.forEach((item: any) => {
-        const parsed = parseAttachment(item);
-        if (parsed.url) parsedStepImgs.push(parsed);
-      });
+    if (typeof stepImgs === "string") {
+      try {
+        stepImgs = JSON.parse(stepImgs);
+      } catch {
+        stepImgs = [];
+      }
     }
-
-    if (parsedStepImgs.length > 0) {
-      return parsedStepImgs;
-    }
-
-    return allAttachments.filter(
-      (att) => att.stepNum === stepIndexNum || att.url.toLowerCase().includes(`step${stepIndexNum}_`)
-    );
+    if (!Array.isArray(stepImgs)) return [];
+    return stepImgs.map(parseAttachment).filter((i: any) => i.url);
   };
 
-  // Get attachments that belong to overall section
-  const overallAttachments = allAttachments.filter((att) => {
-    if (att.url.toLowerCase().includes("overall_")) return true;
-    if (att.stepNum > 0) return false;
-    if (/step\d+_/i.test(att.url)) return false;
-    return true;
-  });
+  // 2. Get attachments belonging ONLY to overall guide section
+  const rawGuideImages = selectedGuide?.images || [];
+  const overallAttachments = (Array.isArray(rawGuideImages) ? rawGuideImages : [])
+    .map(parseAttachment)
+    .filter((item, idx, self) => item.url && self.findIndex((t) => t.url === item.url) === idx);
 
-  // Collect all viewable images for lightbox inside Admin Panel
+  // Collect lightbox preview images
   const allReviewImages: { url: string; name: string }[] = [];
   if (stepsList.length > 0) {
     stepsList.forEach((step: any, idx: number) => {
       const sNum = step.step_number || idx + 1;
-      const sAtts = getStepAttachments(step, sNum);
+      const sAtts = getStepAttachments(step);
       sAtts.forEach((att: any) => {
         if (!att.isPdf && att.url && !allReviewImages.some((x) => x.url === att.url)) {
           allReviewImages.push({ url: att.url, name: att.name || `Step ${sNum} Schematic` });
@@ -425,7 +386,8 @@ export function AdminPendingView(_props: Props = {}) {
                     <div className="space-y-4">
                       {stepsList.map((step: any, idx: number) => {
                         const stepIndexNum = step.step_number || idx + 1;
-                        const stepAttachments = getStepAttachments(step, stepIndexNum);
+                        const stepAttachments = getStepAttachments(step);
+                        const stepTitle = step.title && step.title.trim() ? step.title.trim() : `Step ${stepIndexNum} Procedure`;
 
                         return (
                           <div
@@ -443,7 +405,7 @@ export function AdminPendingView(_props: Props = {}) {
                                 Step Title:
                               </span>
                               <div className="text-sm font-semibold text-marine-text">
-                                {step.title || "Untitled Step"}
+                                {stepTitle}
                               </div>
                             </div>
 
@@ -468,7 +430,7 @@ export function AdminPendingView(_props: Props = {}) {
                               </div>
                             )}
 
-                            {/* Dedicated Step Attachments with Zoom Click */}
+                            {/* Dedicated Step Attachments */}
                             {stepAttachments.length > 0 && (
                               <div className="pt-2 space-y-2 border-t border-marine-border/40">
                                 <span className="text-[10px] font-bold text-sky-400 uppercase tracking-wider block flex items-center gap-1">

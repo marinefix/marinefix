@@ -140,11 +140,11 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
 
   const equipment = guide.equipment;
 
+  // Single Attachment Parser Function
   const parseAttachment = (val: any) => {
     let url = "";
     let isPdf = false;
     let name = "";
-    let stepNum = 0;
 
     if (typeof val === "string" && val.trim()) {
       url = val.trim();
@@ -153,67 +153,52 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
       url = val.url || val.image_url || val.image || val.publicUrl || "";
       isPdf = Boolean(val.isPdf) || url.toLowerCase().includes(".pdf") || url.startsWith("data:application/pdf");
       name = val.name || val.caption || "";
-      stepNum = val.step_number || 0;
     }
 
-    if (!stepNum && url) {
-      const match = url.match(/step(\d+)_/i);
-      if (match && match[1]) {
-        stepNum = parseInt(match[1], 10);
-      }
-    }
-
-    return { url, isPdf, name, stepNum };
+    return { url, isPdf, name };
   };
 
-  const allAttachments = ([] as any[])
-    .concat(guide.images || [], (guide as any).image_urls || [])
+  // Step attachments: extracted ONLY from step object
+  const getStepAttachments = (step: any) => {
+    let raw = step.images || step.step_images || [];
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        raw = [];
+      }
+    }
+    if (!Array.isArray(raw)) return [];
+    return raw.map(parseAttachment).filter((i: any) => i.url);
+  };
+
+  // Overall attachments: extracted ONLY from guide.images (guide_images table)
+  const rawGuideImages = guide.images || [];
+  const overallAttachments = (Array.isArray(rawGuideImages) ? rawGuideImages : [])
     .map(parseAttachment)
     .filter((item, idx, self) => item.url && self.findIndex((t) => t.url === item.url) === idx);
 
-  const getStepAttachments = (step: any, stepIndexNum: number) => {
-    let stepImgs = step.images || step.step_images || [];
-    const parsedStepImgs = (Array.isArray(stepImgs) ? stepImgs : [])
-      .map(parseAttachment)
-      .filter((i: any) => i.url);
-
-    if (parsedStepImgs.length > 0) return parsedStepImgs;
-
-    return allAttachments.filter(
-      (att) => att.stepNum === stepIndexNum || att.url.toLowerCase().includes(`step${stepIndexNum}_`)
-    );
-  };
-
-  const overallAttachments = allAttachments.filter((att) => {
-    if (att.url.toLowerCase().includes("overall_")) return true;
-    if (att.stepNum > 0) return false;
-    if (/step\d+_/i.test(att.url)) return false;
-    return true;
-  });
-
-  const allStepImages: { url: string; name: string }[] = [];
+  // Lightbox list
+  const lightboxItems: { url: string; name: string }[] = [];
   if (guide.steps && guide.steps.length > 0) {
     guide.steps.forEach((step: any, idx: number) => {
       const stepNum = step.step_number || idx + 1;
-      const stepAtts = getStepAttachments(step, stepNum);
+      const stepAtts = getStepAttachments(step);
       stepAtts.forEach((att) => {
-        if (!att.isPdf && att.url && !allStepImages.some((x) => x.url === att.url)) {
-          allStepImages.push({ url: att.url, name: att.name || `Step ${stepNum} Schematic` });
+        if (!att.isPdf && att.url && !lightboxItems.some((x) => x.url === att.url)) {
+          lightboxItems.push({ url: att.url, name: att.name || `Step ${stepNum} Drawing` });
         }
       });
     });
   }
+  overallAttachments.forEach((att) => {
+    if (!att.isPdf && att.url && !lightboxItems.some((x) => x.url === att.url)) {
+      lightboxItems.push({ url: att.url, name: att.name || "Schematic Drawing" });
+    }
+  });
 
-  const overallOnlyImages = overallAttachments
-    .filter((i) => !i.isPdf)
-    .map((i) => ({ url: i.url, name: i.name || "Schematic" }));
-
-  const combinedImageGallery = [...allStepImages, ...overallOnlyImages].filter(
-    (item, index, self) => index === self.findIndex((t) => t.url === item.url)
-  );
-
-  const lightboxUrls = combinedImageGallery.map((i) => i.url);
-  const lightboxCaptions = combinedImageGallery.map((i) => i.name);
+  const lightboxUrls = lightboxItems.map((i) => i.url);
+  const lightboxCaptions = lightboxItems.map((i) => i.name);
 
   function openLightboxByUrl(targetUrl: string) {
     const idx = lightboxUrls.indexOf(targetUrl);
@@ -393,7 +378,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
           </div>
         )}
 
-        {/* Introduction / Overview Box with Heading & Icon */}
+        {/* Introduction / Overview Box */}
         {guide.introduction && (
           <div className="mb-6 p-4 rounded-xl bg-marine-card print:bg-slate-100 border border-marine-border print:border-slate-300 w-full overflow-hidden">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-marine-muted print:text-slate-600 mb-2">
@@ -415,7 +400,8 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
             <div className="space-y-4 w-full">
               {guide.steps.map((step: any, index: number) => {
                 const stepNum = step.step_number || index + 1;
-                const stepAttachments = getStepAttachments(step, stepNum);
+                const stepAttachments = getStepAttachments(step);
+                const stepTitle = step.title && step.title.trim() ? step.title.trim() : `Step ${stepNum} Procedure`;
 
                 return (
                   <div
@@ -432,13 +418,13 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                           Step {stepNum} Action
                         </span>
                         <h3 className="text-base font-semibold text-marine-text print:text-black leading-snug break-words break-all">
-                          {step.title || (typeof step === "string" ? step : `Diagnostic Step ${stepNum}`)}
+                          {stepTitle}
                         </h3>
                       </div>
                     </div>
 
                     {/* Step Instruction Box */}
-                    {step.instruction && (
+                    {step.instruction && step.instruction.trim() && (
                       <div className="bg-marine-dark/70 print:bg-slate-50 border border-marine-border/80 print:border-slate-200 rounded-xl p-4 sm:ml-11 overflow-hidden">
                         <span className="text-[11px] font-bold uppercase tracking-wider text-marine-muted print:text-slate-500 block mb-1.5">
                           Instruction &amp; Procedure
@@ -464,13 +450,13 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                       </div>
                     )}
 
-                    {/* Step-specific PDF/Image Attachments */}
+                    {/* Step-specific Attachments with Fast Loading */}
                     {stepAttachments.length > 0 && (
                       <div className="sm:ml-11 pt-3 border-t border-marine-border/60 print:border-slate-300">
                         <span className="text-[11px] font-bold text-sky-400 print:text-slate-600 uppercase tracking-wider block mb-2.5 flex items-center gap-1.5">
-                          <ImageIcon className="h-3.5 w-3.5" /> Step {stepNum} Schematic / Drawing:
+                          <ImageIcon className="h-3.5 w-3.5" /> Step {stepNum} Schematic / Drawing ({stepAttachments.length}):
                         </span>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {stepAttachments.map((parsed: any, attIdx: number) => (
                             <div
                               key={attIdx}
@@ -500,13 +486,15 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                                 <button
                                   type="button"
                                   onClick={() => openLightboxByUrl(parsed.url)}
-                                  className="group relative w-full flex items-center justify-center bg-black/80 rounded-lg overflow-hidden max-h-48 border border-marine-border hover:border-marine-accent/60 transition cursor-pointer p-1"
+                                  className="group relative w-full flex items-center justify-center bg-black/60 rounded-lg overflow-hidden border border-marine-border hover:border-marine-accent/60 transition cursor-pointer p-1 min-h-[160px]"
                                   title="Click to Zoom Fullscreen"
                                 >
                                   <img
                                     src={parsed.url}
                                     alt={`Step ${stepNum}`}
-                                    className="max-h-44 object-contain rounded group-hover:scale-105 transition-transform duration-300"
+                                    loading="lazy"
+                                    decoding="async"
+                                    className="max-h-48 w-full object-contain rounded group-hover:scale-105 transition-transform duration-300"
                                   />
                                 </button>
                               )}
@@ -522,10 +510,11 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
           </section>
         )}
 
+        {/* Overall Schematics & Diagrams Section */}
         {overallAttachments.length > 0 && (
           <section className="mb-8 w-full">
-            <h2 className="text-xl font-bold text-marine-text print:text-black mb-1">
-              Overall Schematics &amp; Diagrams
+            <h2 className="text-xl font-bold text-marine-text print:text-black mb-2">
+              Overall Schematics &amp; Diagrams ({overallAttachments.length})
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
               {overallAttachments.map((item: any, i: number) => (
@@ -546,19 +535,28 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                           {item.name || "PDF Schematic Document"}
                         </span>
                       </div>
+                      <a
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-500/20 text-rose-300 print:text-rose-700 hover:bg-rose-500/30 border border-rose-500/30 rounded-lg text-xs font-bold transition"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" /> View PDF
+                      </a>
                     </div>
                   ) : (
                     <button
                       type="button"
                       onClick={() => openLightboxByUrl(item.url)}
-                      className="group relative rounded-lg overflow-hidden border border-marine-border hover:border-marine-accent/60 transition w-full aspect-video bg-marine-base cursor-pointer"
+                      className="group relative rounded-lg overflow-hidden border border-marine-border hover:border-marine-accent/60 transition w-full min-h-[180px] bg-black/50 cursor-pointer flex items-center justify-center"
                       title="Click to Zoom Fullscreen"
                     >
                       <img
                         src={item.url}
                         alt={item.name || "Schematic"}
                         loading="lazy"
-                        className="h-full w-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
+                        decoding="async"
+                        className="max-h-60 w-full object-contain opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-300"
                       />
                     </button>
                   )}

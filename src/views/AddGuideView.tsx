@@ -12,6 +12,9 @@ import {
   ShieldCheck,
   Image as ImageIcon,
   Lock,
+  ChevronUp,
+  ChevronDown,
+  PlusCircle,
 } from "lucide-react";
 import type { Category, Equipment } from "../types";
 import { createGuide, uploadImage } from "../lib/queries";
@@ -48,6 +51,66 @@ const DEFAULT_PPE = [
   "FR coveralls",
 ];
 
+// Helper: Compress & Convert Images to WebP (10MB -> ~150KB) on the browser side
+async function compressImageFile(file: File, maxWidth = 1280, quality = 0.75): Promise<File> {
+  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+    return file;
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(file);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve(file);
+              return;
+            }
+            const cleanName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
+            const compressedFile = new File([blob], cleanName, {
+              type: "image/webp",
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          },
+          "image/webp",
+          quality
+        );
+      };
+
+      img.onerror = () => resolve(file);
+    };
+
+    reader.onerror = () => resolve(file);
+  });
+}
+
 export function AddGuideView({
   equipmentId,
   categories,
@@ -75,6 +138,7 @@ export function AddGuideView({
   // Overall/Global Mixed Files Upload State (General Guide Photos + PDFs)
   const [uploadItems, setUploadItems] = useState<UploadItem[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [compressing, setCompressing] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +176,36 @@ export function AddGuideView({
     setSteps((s) => [...s, { title: "", instruction: "", warning: "", uploadItems: [] }]);
   }
 
+  function insertStepAfter(index: number) {
+    setSteps((prev) => {
+      const next = [...prev];
+      next.splice(index + 1, 0, { title: "", instruction: "", warning: "", uploadItems: [] });
+      return next;
+    });
+  }
+
+  function moveStepUp(index: number) {
+    if (index === 0) return;
+    setSteps((prev) => {
+      const next = [...prev];
+      const temp = next[index];
+      next[index] = next[index - 1];
+      next[index - 1] = temp;
+      return next;
+    });
+  }
+
+  function moveStepDown(index: number) {
+    if (index === steps.length - 1) return;
+    setSteps((prev) => {
+      const next = [...prev];
+      const temp = next[index];
+      next[index] = next[index + 1];
+      next[index + 1] = temp;
+      return next;
+    });
+  }
+
   function removeStep(i: number) {
     setSteps((s) => s.filter((_, idx) => idx !== i));
   }
@@ -122,23 +216,37 @@ export function AddGuideView({
     );
   }
 
-  function handleStepFileSelect(stepIndex: number, e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleStepFileSelect(stepIndex: number, e: React.ChangeEvent<HTMLInputElement>) {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
 
-    const newItems: StepUploadItem[] = files.map((file) => ({
-      file,
-      previewUrl: URL.createObjectURL(file),
-      isPdf: file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"),
-    }));
+    try {
+      setCompressing(true);
+      const processedItems: StepUploadItem[] = await Promise.all(
+        files.map(async (file) => {
+          const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+          const finalFile = isPdf ? file : await compressImageFile(file);
+          return {
+            file: finalFile,
+            previewUrl: URL.createObjectURL(finalFile),
+            isPdf,
+          };
+        })
+      );
 
-    setSteps((prevSteps) =>
-      prevSteps.map((st, idx) =>
-        idx === stepIndex
-          ? { ...st, uploadItems: [...st.uploadItems, ...newItems] }
-          : st
-      )
-    );
+      setSteps((prevSteps) =>
+        prevSteps.map((st, idx) =>
+          idx === stepIndex
+            ? { ...st, uploadItems: [...st.uploadItems, ...processedItems] }
+            : st
+        )
+      );
+    } catch (err) {
+      console.error("Image processing error:", err);
+    } finally {
+      setCompressing(false);
+      e.target.value = "";
+    }
   }
 
   function removeStepUploadItem(stepIndex: number, fileIndex: number) {
@@ -154,17 +262,31 @@ export function AddGuideView({
     );
   }
 
-  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     if (!e.target.files) return;
     const files = Array.from(e.target.files);
 
-    const newItems: UploadItem[] = files.map((file) => ({
-      file,
-      previewUrl: URL.createObjectURL(file),
-      isPdf: file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"),
-    }));
+    try {
+      setCompressing(true);
+      const processedItems: UploadItem[] = await Promise.all(
+        files.map(async (file) => {
+          const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+          const finalFile = isPdf ? file : await compressImageFile(file);
+          return {
+            file: finalFile,
+            previewUrl: URL.createObjectURL(finalFile),
+            isPdf,
+          };
+        })
+      );
 
-    setUploadItems((prev) => [...prev, ...newItems]);
+      setUploadItems((prev) => [...prev, ...processedItems]);
+    } catch (err) {
+      console.error("Image processing error:", err);
+    } finally {
+      setCompressing(false);
+      e.target.value = "";
+    }
   }
 
   function removeUploadItem(index: number) {
@@ -209,13 +331,16 @@ export function AddGuideView({
 
     try {
       let finalPrimaryImageUrl: string | null = null;
-      const allUploadedUrls: { url: string; isPdf?: boolean; name?: string }[] = [];
 
-      // 1. Upload Per-Step Files
+      // 1. Upload Per-Step Files (Saved only inside that specific step)
       const finalSteps = [];
       for (let i = 0; i < steps.length; i++) {
         const step = steps[i];
-        if (!step.title.trim() && !step.instruction.trim()) continue;
+        
+        // Skip step ONLY if title, instruction, AND uploadItems are all completely empty
+        if (!step.title.trim() && !step.instruction.trim() && step.uploadItems.length === 0) {
+          continue;
+        }
 
         const stepAttachments: { url: string; isPdf: boolean; name: string }[] = [];
 
@@ -230,7 +355,6 @@ export function AddGuideView({
                 name: item.file.name,
               };
               stepAttachments.push(attachmentObj);
-              allUploadedUrls.push(attachmentObj);
 
               if (!finalPrimaryImageUrl && !item.isPdf) {
                 finalPrimaryImageUrl = uploadedUrl;
@@ -240,15 +364,16 @@ export function AddGuideView({
         }
 
         finalSteps.push({
-          step_number: i + 1,
-          title: step.title.trim(),
+          step_number: finalSteps.length + 1,
+          title: step.title.trim() || `Step ${finalSteps.length + 1}`,
           instruction: step.instruction.trim(),
           warning: step.warning.trim() || undefined,
           images: stepAttachments,
         });
       }
 
-      // 2. Upload Overall Guide Files
+      // 2. Upload Overall Guide Files (Only from bottom Overall section)
+      const overallUploadedUrls: { url: string; isPdf?: boolean; name?: string }[] = [];
       if (uploadItems.length > 0) {
         for (const item of uploadItems) {
           const uploadedUrl = await uploadImage(item.file);
@@ -259,7 +384,7 @@ export function AddGuideView({
               isPdf: item.isPdf,
               name: item.file.name,
             };
-            allUploadedUrls.push(attachmentObj);
+            overallUploadedUrls.push(attachmentObj);
 
             if (!finalPrimaryImageUrl && !item.isPdf) {
               finalPrimaryImageUrl = uploadedUrl;
@@ -285,7 +410,7 @@ export function AddGuideView({
           .filter(Boolean),
         introduction: introduction.trim(),
         steps: finalSteps,
-        image_urls: allUploadedUrls,
+        image_urls: overallUploadedUrls, // Passed only overall files
         is_approved: false,
         status: "pending",
       } as any);
@@ -409,7 +534,7 @@ export function AddGuideView({
           </div>
         </div>
 
-        {/* Dynamic Context-Aware Equipment Field */}
+        {/* Equipment Selection */}
         <Field label="Equipment *">
           {equipmentId && currentEquipment ? (
             <div className="flex items-center justify-between p-3.5 rounded-xl bg-marine-accent/10 border border-marine-accent/40 text-marine-text">
@@ -501,6 +626,7 @@ export function AddGuideView({
           />
         </Field>
 
+        {/* Diagnostic Steps Section */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -508,7 +634,7 @@ export function AddGuideView({
                 Diagnostic Steps
               </label>
               <p className="text-xs text-marine-muted">
-                Add title, instruction, warning & dedicated photos/PDF drawings for each step.
+                Add, re-order, or insert steps anywhere in the sequence.
               </p>
             </div>
             <button
@@ -516,147 +642,205 @@ export function AddGuideView({
               onClick={addStep}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-marine-accent/10 text-marine-accent hover:bg-marine-accent/20 border border-marine-accent/30 text-xs font-semibold transition cursor-pointer"
             >
-              <Plus className="h-4 w-4" /> Add Step
+              <Plus className="h-4 w-4" /> Add Step at Bottom
             </button>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             {steps.map((s, i) => (
-              <div
-                key={i}
-                className="rounded-xl border border-marine-border bg-marine-card p-5 space-y-4"
-              >
-                <div className="flex items-center justify-between pb-2 border-b border-marine-border/60">
-                  <span className="px-2.5 py-1 rounded bg-marine-accent/20 text-marine-accent text-xs font-bold">
-                    Step {i + 1}
-                  </span>
-                  {steps.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeStep(i)}
-                      className="p-1 text-marine-muted hover:text-marine-error transition cursor-pointer"
-                      title="Remove Step"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-marine-muted uppercase block mb-1">
-                    Step Title
-                  </label>
-                  <input
-                    type="text"
-                    value={s.title}
-                    onChange={(e) => updateStep(i, "title", e.target.value)}
-                    placeholder="e.g. Check Main Circuit Breaker Voltage"
-                    className="input"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-marine-muted uppercase block mb-1">
-                    Action / Instruction
-                  </label>
-                  <textarea
-                    value={s.instruction}
-                    onChange={(e) => updateStep(i, "instruction", e.target.value)}
-                    rows={2}
-                    placeholder="Detailed step instruction..."
-                    className="input"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-[11px] font-bold text-amber-400 uppercase block mb-1">
-                    Safety Warning (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={s.warning}
-                    onChange={(e) => updateStep(i, "warning", e.target.value)}
-                    placeholder="e.g. Ensure main power is isolated before probing"
-                    className="input"
-                  />
-                </div>
-
-                <div className="pt-2">
-                  <label className="text-[11px] font-bold text-sky-400 uppercase block mb-1.5 flex items-center gap-1">
-                    <ImageIcon className="h-3.5 w-3.5" /> Photos / PDF Schematic for Step {i + 1}
-                  </label>
-
-                  <label className="flex items-center justify-center gap-2 p-3.5 border border-dashed border-marine-border hover:border-marine-accent/60 rounded-xl cursor-pointer bg-marine-dark/50 transition text-xs font-medium text-marine-text">
-                    <Upload className="h-4 w-4 text-marine-accent" />
-                    <span>Upload Photo / PDF Drawing for Step {i + 1}</span>
-                    <input
-                      type="file"
-                      accept="image/*,application/pdf"
-                      multiple
-                      onChange={(e) => handleStepFileSelect(i, e)}
-                      className="hidden"
-                    />
-                  </label>
-
-                  {s.uploadItems && s.uploadItems.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 mt-3">
-                      {s.uploadItems.map((item, fIdx) => (
-                        <div
-                          key={fIdx}
-                          className="relative rounded-lg overflow-hidden border border-marine-border bg-marine-dark aspect-square p-1.5 flex flex-col items-center justify-center text-center"
-                        >
-                          {item.isPdf ? (
-                            <div className="flex flex-col items-center justify-center text-rose-400 gap-1 p-1">
-                              <FileText className="h-6 w-6 text-rose-500" />
-                              <span className="text-[9px] font-semibold text-marine-text truncate max-w-[80px]" title={item.file.name}>
-                                {item.file.name}
-                              </span>
-                              <span className="text-[8px] bg-rose-500/20 text-rose-300 px-1 py-0.2 rounded font-bold">
-                                PDF
-                              </span>
-                            </div>
-                          ) : (
-                            <img
-                              src={item.previewUrl}
-                              alt={`Step ${i + 1} file ${fIdx}`}
-                              className="w-full h-full object-cover rounded"
-                            />
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => removeStepUploadItem(i, fIdx)}
-                            className="absolute top-1 right-1 p-0.5 bg-red-600 text-white rounded-full opacity-80 hover:opacity-100 transition shadow cursor-pointer"
-                            title="Remove"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </button>
-                        </div>
-                      ))}
+              <div key={i} className="space-y-2">
+                <div className="rounded-xl border border-marine-border bg-marine-card p-5 space-y-4 shadow-sm relative">
+                  <div className="flex items-center justify-between pb-2 border-b border-marine-border/60 flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded bg-marine-accent/20 text-marine-accent text-xs font-bold">
+                        Step {i + 1}
+                      </span>
+                      <span className="text-[11px] text-marine-muted font-medium">
+                        of {steps.length}
+                      </span>
                     </div>
-                  )}
+
+                    {/* Step Re-order and Delete Controls */}
+                    <div className="flex items-center gap-1 bg-marine-dark/70 px-2 py-1 rounded-lg border border-marine-border/70">
+                      <button
+                        type="button"
+                        onClick={() => moveStepUp(i)}
+                        disabled={i === 0}
+                        className="p-1 rounded text-marine-muted hover:text-marine-accent hover:bg-marine-accent/10 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-marine-muted transition cursor-pointer"
+                        title="Move Step Up"
+                      >
+                        <ChevronUp className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => moveStepDown(i)}
+                        disabled={i === steps.length - 1}
+                        className="p-1 rounded text-marine-muted hover:text-marine-accent hover:bg-marine-accent/10 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-marine-muted transition cursor-pointer"
+                        title="Move Step Down"
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </button>
+
+                      <div className="w-px h-3.5 bg-marine-border mx-1"></div>
+
+                      {steps.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeStep(i)}
+                          className="p-1 rounded text-marine-muted hover:text-marine-error hover:bg-marine-error/10 transition cursor-pointer"
+                          title="Delete Step"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-marine-muted uppercase block mb-1">
+                      Step Title
+                    </label>
+                    <input
+                      type="text"
+                      value={s.title}
+                      onChange={(e) => updateStep(i, "title", e.target.value)}
+                      placeholder="e.g. Check Main Circuit Breaker Voltage"
+                      className="input"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-marine-muted uppercase block mb-1">
+                      Action / Instruction
+                    </label>
+                    <textarea
+                      value={s.instruction}
+                      onChange={(e) => updateStep(i, "instruction", e.target.value)}
+                      rows={2}
+                      placeholder="Detailed step instruction..."
+                      className="input"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-amber-400 uppercase block mb-1">
+                      Safety Warning (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={s.warning}
+                      onChange={(e) => updateStep(i, "warning", e.target.value)}
+                      placeholder="e.g. Ensure main power is isolated before probing"
+                      className="input"
+                    />
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="text-[11px] font-bold text-sky-400 uppercase block mb-1.5 flex items-center gap-1">
+                      <ImageIcon className="h-3.5 w-3.5" /> Photos / PDF Schematic for Step {i + 1}
+                    </label>
+
+                    <label className="flex items-center justify-center gap-2 p-3.5 border border-dashed border-marine-border hover:border-marine-accent/60 rounded-xl cursor-pointer bg-marine-dark/50 transition text-xs font-medium text-marine-text">
+                      {compressing ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-marine-accent" />
+                      ) : (
+                        <Upload className="h-4 w-4 text-marine-accent" />
+                      )}
+                      <span>
+                        {compressing
+                          ? "Optimizing & Compressing..."
+                          : `Upload Photo / PDF Drawing for Step ${i + 1}`}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        multiple
+                        disabled={compressing}
+                        onChange={(e) => handleStepFileSelect(i, e)}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {s.uploadItems && s.uploadItems.length > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 mt-3">
+                        {s.uploadItems.map((item, fIdx) => (
+                          <div
+                            key={fIdx}
+                            className="relative rounded-lg overflow-hidden border border-marine-border bg-marine-dark aspect-square p-1.5 flex flex-col items-center justify-center text-center"
+                          >
+                            {item.isPdf ? (
+                              <div className="flex flex-col items-center justify-center text-rose-400 gap-1 p-1">
+                                <FileText className="h-6 w-6 text-rose-500" />
+                                <span className="text-[9px] font-semibold text-marine-text truncate max-w-[80px]" title={item.file.name}>
+                                  {item.file.name}
+                                </span>
+                                <span className="text-[8px] bg-rose-500/20 text-rose-300 px-1 py-0.2 rounded font-bold">
+                                  PDF
+                                </span>
+                              </div>
+                            ) : (
+                              <img
+                                src={item.previewUrl}
+                                alt={`Step ${i + 1} file ${fIdx}`}
+                                className="w-full h-full object-cover rounded"
+                              />
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => removeStepUploadItem(i, fIdx)}
+                              className="absolute top-1 right-1 p-0.5 bg-red-600 text-white rounded-full opacity-80 hover:opacity-100 transition shadow cursor-pointer"
+                              title="Remove"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Quick In-between Step Insertion Button */}
+                <div className="flex items-center justify-center pt-1 pb-2">
+                  <button
+                    type="button"
+                    onClick={() => insertStepAfter(i)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-marine-muted hover:text-marine-accent bg-marine-dark/60 hover:bg-marine-accent/10 border border-dashed border-marine-border hover:border-marine-accent/50 transition cursor-pointer"
+                    title={`Insert step between Step ${i + 1} and Step ${i + 2}`}
+                  >
+                    <PlusCircle className="h-3.5 w-3.5 text-marine-accent" />
+                    <span>Insert step here (below Step {i + 1})</span>
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         </div>
 
+        {/* Overall Schematics / Global Upload */}
         <Field
           label="Overall Guide Photos & PDF Drawings (Optional)"
           hint="General photos or circuit drawing documents for the overall guide."
         >
           <div className="mt-1">
             <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-marine-border hover:border-marine-accent/60 rounded-xl cursor-pointer bg-marine-card/50 transition">
-              <Upload className="h-8 w-8 text-marine-accent mb-1.5" />
+              {compressing ? (
+                <Loader2 className="h-8 w-8 animate-spin text-marine-accent mb-1.5" />
+              ) : (
+                <Upload className="h-8 w-8 text-marine-accent mb-1.5" />
+              )}
               <span className="text-xs font-medium text-marine-text">
-                Click to choose General Photos or PDF Drawings
+                {compressing ? "Optimizing & Compressing Images..." : "Click to choose General Photos or PDF Drawings"}
               </span>
               <span className="text-[11px] text-marine-muted mt-0.5">
-                Supports JPG, PNG, WEBP & PDF Drawings
+                Auto-optimized to WebP | Supports JPG, PNG, WEBP & PDF Drawings
               </span>
               <input
                 type="file"
                 accept="image/*,application/pdf"
                 multiple
+                disabled={compressing}
                 onChange={handleFileSelect}
                 className="hidden"
               />
@@ -704,7 +888,7 @@ export function AddGuideView({
         <div className="flex items-center gap-3 pt-4">
           <button
             type="submit"
-            disabled={submitting || uploadingFiles}
+            disabled={submitting || uploadingFiles || compressing}
             className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg bg-marine-accent text-marine-base font-semibold hover:bg-marine-accentHover transition disabled:opacity-60 cursor-pointer shadow-lg shadow-marine-accent/20"
           >
             {submitting ? (
