@@ -184,7 +184,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 };
 
-// Admin Approve / Reject (PATCH)
+// Admin Approve / Reject (PATCH) - Reject seiyyum podhu automatic-aga database-il irundhu complete-aga erase aagum
 export const onRequestPatch: PagesFunction<Env> = async (context) => {
   try {
     const { id, action } = (await context.request.json()) as any;
@@ -202,12 +202,12 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
     }
 
     if (action === "reject") {
-      await context.env.DB.prepare(
-        "UPDATE guides SET is_approved = 0, status = 'rejected' WHERE id = ?"
-      )
-        .bind(id)
-        .run();
-      return Response.json({ success: true, message: "Guide rejected" });
+      await context.env.DB.prepare("DELETE FROM guide_steps WHERE guide_id = ?").bind(id).run();
+      await context.env.DB.prepare("DELETE FROM guide_images WHERE guide_id = ?").bind(id).run();
+      await context.env.DB.prepare("DELETE FROM bookmarks WHERE guide_id = ?").bind(id).run();
+      await context.env.DB.prepare("DELETE FROM guides WHERE id = ?").bind(id).run();
+
+      return Response.json({ success: true, message: "Guide rejected and permanently deleted from database" });
     }
 
     return new Response("Invalid action", { status: 400 });
