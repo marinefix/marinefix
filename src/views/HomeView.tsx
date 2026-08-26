@@ -112,11 +112,11 @@ export function HomeView({ categories, equipment, totalGuides }: Props) {
                 key={idx}
                 className="group relative overflow-hidden rounded-xl bg-marine-card border border-marine-border p-4 transition-all duration-300 hover:-translate-y-1.5 hover:border-marine-accent/50 hover:shadow-lg hover:shadow-marine-accent/10 cursor-pointer"
               >
-                <div className="relative w-full h-44 overflow-hidden rounded-lg bg-slate-900/60 mb-4 flex items-center justify-center border border-marine-border/40">
+                <div className="relative w-full h-44 overflow-hidden rounded-lg bg-slate-900 mb-4 flex items-center justify-center border border-marine-border/40">
                   <img 
                     src={item.img} 
                     alt={item.name} 
-                    loading="lazy"
+                    loading="eager"
                     decoding="async"
                     className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105" 
                   />
