@@ -12,7 +12,7 @@ type Props = {
 const featuredEquipment = [
   {
     name: "Marine Main Engine",
-    img: "/main engine.png",
+    img: "/main-engine.png",
     description: "2-Stroke propulsion engine diagnostics, fuel injection, and safety system checks.",
   },
   {
@@ -22,7 +22,7 @@ const featuredEquipment = [
   },
   {
     name: "Marine Auxiliary Boiler",
-    img: "/boilor.png",
+    img: "/boiler.png",
     description: "Steam pressure control, burner automation, and safety cutouts.",
   },
   {
