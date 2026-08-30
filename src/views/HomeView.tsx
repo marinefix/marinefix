@@ -88,10 +88,11 @@ export function HomeView({ categories, equipment, totalGuides }: Props) {
                 </div>
               </button>
 
-              {/* Direct APK Download Button */}
+              {/* Direct APK Download Button (GitHub Releases Link) */}
               <a
-                href="/marinefix.apk"
-                download="MarineFix.apk"
+                href="https://github.com/marinefix/marinefix/releases/download/v1.0.0/MarineFix.apk"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs tracking-wide shadow-lg shadow-emerald-950/40 transition-all cursor-pointer border border-emerald-400/30"
               >
                 <Download className="w-4 h-4 text-white" />
