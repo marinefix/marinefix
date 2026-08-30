@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Anchor, Bookmark, PlusCircle, ShieldAlert, Menu, LogOut } from "lucide-react";
+import { Anchor, Bookmark, PlusCircle, ShieldAlert, Menu, LogOut, Smartphone } from "lucide-react";
 import { SearchBar } from "./SearchBar";
 import { navigate } from "../lib/router";
 import { checkIsAdmin, logoutAdmin } from "../lib/adminAuth";
@@ -55,11 +55,9 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
 
   const handleLogout = () => {
     logoutAdmin();
-    // Review panel-la irundhu logout panna safe-ah Home page-ku redirect aagidum
     if (window.location.pathname.includes("admin-pending") || window.location.search.includes("admin-pending")) {
       navigate({ name: "home" });
     } else {
-      // Router state sync-kaga fallback home navigation
       const currentPath = window.location.pathname;
       if (currentPath === "/admin-pending") {
         navigate({ name: "home" });
@@ -97,6 +95,17 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Direct GitHub APK Download Link */}
+            <a
+              href="https://github.com/marinefix/marinefix/raw/main/public/MarineFix.apk"
+              download="MarineFix.apk"
+              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-marine-accent/10 text-marine-accent border border-marine-accent/30 hover:bg-marine-accent hover:text-marine-base transition cursor-pointer"
+              title="Download Marine Fix Android App"
+            >
+              <Smartphone className="h-4 w-4" />
+              <span>Get APK</span>
+            </a>
+
             <button
               type="button"
               onClick={() => navigate({ name: "add-guide" })}

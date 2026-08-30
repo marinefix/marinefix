@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, ChevronDown, FolderTree, X } from "lucide-react";
+import { ChevronRight, ChevronDown, FolderTree, X, Download, Smartphone } from "lucide-react";
 import type { Category, Equipment } from "../types";
 import { getIcon } from "../lib/icons";
 import { navigate } from "../lib/router";
@@ -97,48 +97,65 @@ export function Sidebar({
   };
 
   const navContent = (
-    <nav className="h-full overflow-y-auto scrollbar-marine py-4">
-      <div className="px-4 mb-3 flex items-center justify-between text-marine-muted text-xs uppercase tracking-wider font-semibold">
-        <div className="flex items-center gap-2">
-          <FolderTree className="h-4 w-4 text-marine-accent" />
-          <span>Departments</span>
+    <div className="flex flex-col h-full justify-between">
+      <nav className="flex-1 overflow-y-auto scrollbar-marine py-4">
+        <div className="px-4 mb-3 flex items-center justify-between text-marine-muted text-xs uppercase tracking-wider font-semibold">
+          <div className="flex items-center gap-2">
+            <FolderTree className="h-4 w-4 text-marine-accent" />
+            <span>Departments</span>
+          </div>
+          {onClose && (
+            <button 
+              type="button"
+              onClick={onClose}
+              className="md:hidden p-1 text-marine-muted hover:text-marine-accent cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
-        {onClose && (
-          <button 
-            type="button"
-            onClick={onClose}
-            className="md:hidden p-1 text-marine-muted hover:text-marine-accent"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
+        <ul className="space-y-1 px-2">
+          {tree.map((node) => (
+            <DepartmentNode
+              key={node.id}
+              node={node}
+              categories={categories}
+              expanded={expanded}
+              onToggle={toggle}
+              activeCategoryId={activeCategoryId}
+              activeEquipmentId={activeEquipmentId}
+              equipmentFor={equipmentFor}
+              guidesCounts={guidesCounts}
+              getCategoryGuideCount={getCategoryGuideCount}
+              onSelect={handleItemSelect}
+              depth={0}
+            />
+          ))}
+        </ul>
+      </nav>
+
+      {/* Direct GitHub Download Button */}
+      <div className="p-3 border-t border-marine-border bg-marine-card/50">
+        <a
+          href="https://github.com/marinefix/marinefix/raw/main/public/MarineFix.apk"
+          download="MarineFix.apk"
+          className="flex items-center justify-between w-full px-3 py-2.5 rounded-lg bg-marine-accent/10 border border-marine-accent/25 hover:bg-marine-accent text-marine-accent hover:text-marine-base font-semibold text-xs transition duration-150 cursor-pointer shadow-sm group"
+        >
+          <div className="flex items-center gap-2">
+            <Smartphone className="h-4 w-4 shrink-0 group-hover:scale-110 transition-transform" />
+            <span>Marine Fix App</span>
+          </div>
+          <Download className="h-4 w-4 shrink-0" />
+        </a>
       </div>
-      <ul className="space-y-1 px-2">
-        {tree.map((node) => (
-          <DepartmentNode
-            key={node.id}
-            node={node}
-            categories={categories}
-            expanded={expanded}
-            onToggle={toggle}
-            activeCategoryId={activeCategoryId}
-            activeEquipmentId={activeEquipmentId}
-            equipmentFor={equipmentFor}
-            guidesCounts={guidesCounts}
-            getCategoryGuideCount={getCategoryGuideCount}
-            onSelect={handleItemSelect}
-            depth={0}
-          />
-        ))}
-      </ul>
-    </nav>
+    </div>
   );
 
   return (
     <>
       {/* Desktop Sidebar */}
       <aside className="w-72 shrink-0 border-r border-marine-border bg-marine-card/30 hidden md:block">
-        <div className="sticky top-16 max-h-[calc(100vh-4rem)]">
+        <div className="sticky top-16 h-[calc(100vh-4rem)]">
           {navContent}
         </div>
       </aside>
