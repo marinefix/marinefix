@@ -8,7 +8,6 @@
   *::after {
     box-sizing: border-box;
     -webkit-tap-highlight-color: transparent;
-    /* Spaces illadha continuous long text, letters, or links box-ah vittu veliya pogama auto-wrap aaga */
     overflow-wrap: anywhere;
     word-break: break-word;
   }
@@ -87,4 +86,25 @@
 
 main {
   animation: pageFadeIn 0.2s ease-out;
+}
+
+/* --- INGA IRUKKIRATHU DHAAN PRINT SOP-KKU THEVAYANA PRINT CSS --- */
+@media print {
+  header, footer, aside, nav, .sidebar, .left-menu {
+    display: none !important;
+  }
+  
+  main, .flex-1, .min-w-0 {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

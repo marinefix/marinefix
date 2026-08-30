@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, ChevronDown, FolderTree, X, Download, Smartphone } from "lucide-react";
+import { ChevronRight, ChevronDown, FolderTree, X } from "lucide-react";
 import type { Category, Equipment } from "../types";
 import { getIcon } from "../lib/icons";
 import { navigate } from "../lib/router";
@@ -60,7 +60,7 @@ export function Sidebar({
   const [expanded, setExpanded] = useState<Set<string>>(initialExpanded);
 
   function toggle(id: string) {
-    setExpanded((prev) => {
+    setExpanded((prev: Set<string>) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -133,21 +133,6 @@ export function Sidebar({
           ))}
         </ul>
       </nav>
-
-      {/* Direct GitHub Download Button */}
-      <div className="p-3 border-t border-marine-border bg-marine-card/50">
-        <a
-          href="https://github.com/marinefix/marinefix/raw/main/public/MarineFix.apk"
-          download="MarineFix.apk"
-          className="flex items-center justify-between w-full px-3 py-2.5 rounded-lg bg-marine-accent/10 border border-marine-accent/25 hover:bg-marine-accent text-marine-accent hover:text-marine-base font-semibold text-xs transition duration-150 cursor-pointer shadow-sm group"
-        >
-          <div className="flex items-center gap-2">
-            <Smartphone className="h-4 w-4 shrink-0 group-hover:scale-110 transition-transform" />
-            <span>Marine Fix App</span>
-          </div>
-          <Download className="h-4 w-4 shrink-0" />
-        </a>
-      </div>
     </div>
   );
 

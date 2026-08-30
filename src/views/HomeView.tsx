@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { ArrowRight, Wrench, BookOpen, Download } from "lucide-react";
 import type { Category, Equipment } from "../types";
 import { navigate } from "../lib/router";
@@ -33,6 +33,37 @@ const featuredEquipment = [
 ];
 
 export function HomeView({ categories, equipment, totalGuides }: Props) {
+  const [isApp, setIsApp] = useState(false);
+
+  useEffect(() => {
+    const checkAppMode = () => {
+      // Capacitor native detection
+      const isCapacitor =
+        typeof (window as any).Capacitor !== "undefined" ||
+        Boolean((window as any).Capacitor?.isNativePlatform?.());
+
+      // PWA / Standalone mode detection
+      const isStandalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        (window.navigator as any).standalone === true ||
+        document.referrer.includes("android-app://");
+
+      // Android WebView / App host scheme detection
+      const isAndroidWebView =
+        /wv|Android.*Version\/[0-9.]+/i.test(navigator.userAgent) ||
+        window.location.origin.includes("localhost") ||
+        window.location.protocol === "capacitor:" ||
+        (window.location.protocol === "http:" && window.location.hostname === "localhost");
+
+      setIsApp(Boolean(isCapacitor || isStandalone || isAndroidWebView));
+    };
+
+    checkAppMode();
+    const mediaQuery = window.matchMedia("(display-mode: standalone)");
+    mediaQuery.addEventListener("change", checkAppMode);
+    return () => mediaQuery.removeEventListener("change", checkAppMode);
+  }, []);
+
   const departments = useMemo(
     () =>
       categories
@@ -88,16 +119,18 @@ export function HomeView({ categories, equipment, totalGuides }: Props) {
                 </div>
               </button>
 
-              {/* Direct APK Download Button (GitHub Releases Link) */}
-              <a
-                href="https://github.com/marinefix/marinefix/releases/download/v1.0.0/MarineFix.apk"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs tracking-wide shadow-lg shadow-emerald-950/40 transition-all cursor-pointer border border-emerald-400/30"
-              >
-                <Download className="w-4 h-4 text-white" />
-                Download App (.APK)
-              </a>
+              {/* Direct APK Download Button - Hidden inside Installed App */}
+              {!isApp && (
+                <a
+                  href="/MarineFix.apk"
+                  download="MarineFix.apk"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs tracking-wide shadow-lg shadow-emerald-950/40 transition-all cursor-pointer border border-emerald-400/30"
+                  title="Download Marine Fix APK"
+                >
+                  <Download className="w-4 h-4 text-white" />
+                  <span>Download App (.APK)</span>
+                </a>
+              )}
             </div>
           </div>
         </section>

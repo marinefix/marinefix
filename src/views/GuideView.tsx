@@ -114,7 +114,13 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
   }
 
   const handlePrintSOP = () => {
-    window.print();
+    // 1. Native Android App check: Call custom Android Interface
+    if ((window as any).AndroidPrint && typeof (window as any).AndroidPrint.printPage === "function") {
+      (window as any).AndroidPrint.printPage();
+    } else {
+      // 2. Standard Web Browser: Call window.print()
+      window.print();
+    }
   };
 
   if (loading) {
@@ -221,9 +227,9 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
   const authorEmail = (guide as any).author_email;
 
   return (
-    <div className="animate-fade-in print:bg-white print:text-black w-full">
+    <div className="animate-fade-in print:bg-white print:text-black w-full min-w-0">
       {/* Navigation Breadcrumb */}
-      <div className="flex items-center gap-1 text-sm text-marine-muted px-6 py-3 lg:px-10 border-b border-marine-border flex-wrap print:hidden">
+      <div className="flex items-center gap-1 text-sm text-marine-muted px-4 sm:px-6 py-3 lg:px-10 border-b border-marine-border flex-wrap print:hidden">
         <button
           onClick={() => navigate({ name: "home" })}
           className="hover:text-marine-accent transition cursor-pointer"
@@ -232,7 +238,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
         </button>
         {equipment && (
           <>
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="h-3.5 w-3.5 shrink-0" />
             <button
               onClick={() => navigate({ name: "equipment", id: equipment.id })}
               className="hover:text-marine-accent transition cursor-pointer"
@@ -241,12 +247,12 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
             </button>
           </>
         )}
-        <ChevronRight className="h-3.5 w-3.5" />
+        <ChevronRight className="h-3.5 w-3.5 shrink-0" />
         <span className="text-marine-text line-clamp-1">{guide.title}</span>
       </div>
 
       {/* Main Content Area */}
-      <article className="px-6 py-8 lg:px-10 w-full max-w-6xl print:max-w-full print:px-0 print:py-2">
+      <article className="px-4 sm:px-6 py-6 lg:px-10 w-full max-w-6xl print:max-w-full print:px-0 print:py-2">
         <button
           onClick={() => window.history.back()}
           className="flex items-center gap-1 text-sm text-marine-muted hover:text-marine-accent transition mb-4 cursor-pointer print:hidden"
@@ -260,16 +266,17 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
           </div>
         )}
 
-        <div className="flex items-start justify-between gap-4 mb-3 flex-wrap">
-          <h1 className="text-2xl lg:text-3xl font-bold text-marine-text print:text-black leading-tight flex-1 break-words break-all">
+        {/* Responsive Header Section */}
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-marine-text print:text-black leading-tight flex-1 break-words">
             {guide.title}
           </h1>
 
-          <div className="flex items-center gap-2 shrink-0 print:hidden">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap print:hidden">
             <button
               type="button"
               onClick={handlePrintSOP}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-medium text-xs bg-marine-card text-marine-text border border-marine-border hover:border-marine-accent/50 transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg font-medium text-xs bg-marine-card text-marine-text border border-marine-border hover:border-marine-accent/50 transition cursor-pointer"
               title="Print SOP / Save PDF"
             >
               <Printer className="h-4 w-4 text-sky-400" />
@@ -281,7 +288,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                 type="button"
                 onClick={handleDeleteGuide}
                 disabled={deletingGuide}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-medium text-xs bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg font-medium text-xs bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition cursor-pointer"
                 title="Permanently delete from database"
               >
                 {deletingGuide ? (
@@ -297,7 +304,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
               type="button"
               onClick={toggleBookmark}
               disabled={savingBookmark}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition border cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg font-medium text-xs sm:text-sm transition border cursor-pointer ${
                 isBookmarked
                   ? "bg-marine-accent/15 text-marine-accent border-marine-accent/40"
                   : "bg-marine-card text-marine-text border-marine-border hover:border-marine-accent/60"
@@ -316,11 +323,11 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
         </div>
 
         {authorEmail && (
-          <div className="mb-6 flex items-center gap-2">
+          <div className="mb-6 flex items-center gap-2 flex-wrap">
             <span className="text-xs text-marine-muted print:text-slate-600 font-medium">Author Contact:</span>
             <a
               href={`mailto:${authorEmail}`}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 print:text-sky-700 text-xs font-semibold hover:bg-sky-500/20 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 print:text-sky-700 text-xs font-semibold hover:bg-sky-500/20 transition break-all"
             >
               <Mail className="h-3.5 w-3.5" />
               {authorEmail}
@@ -333,7 +340,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
             <div className="text-xs uppercase tracking-wider text-marine-muted font-semibold mb-1">
               Symptom
             </div>
-            <p className="text-marine-text print:text-black break-words break-all">{guide.symptom}</p>
+            <p className="text-marine-text print:text-black break-words">{guide.symptom}</p>
           </div>
         )}
 
@@ -350,7 +357,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
               {guide.safety_ppe.map((p) => (
                 <span
                   key={p}
-                  className="inline-flex items-center text-sm px-3 py-1.5 rounded-full bg-marine-warn/15 print:bg-amber-200 text-marine-warn print:text-amber-900 border border-marine-warn/30 print:border-amber-400 break-all"
+                  className="inline-flex items-center text-sm px-3 py-1.5 rounded-full bg-marine-warn/15 print:bg-amber-200 text-marine-warn print:text-amber-900 border border-marine-warn/30 print:border-amber-400"
                 >
                   {p}
                 </span>
@@ -369,7 +376,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
               {guide.tools_required.map((t) => (
                 <span
                   key={t}
-                  className="inline-flex items-center text-sm px-3 py-1.5 rounded-full bg-marine-accent/10 print:bg-sky-200 text-marine-accent print:text-sky-900 border border-marine-accent/30 print:border-sky-400 break-all"
+                  className="inline-flex items-center text-sm px-3 py-1.5 rounded-full bg-marine-accent/10 print:bg-sky-200 text-marine-accent print:text-sky-900 border border-marine-accent/30 print:border-sky-400"
                 >
                   {t}
                 </span>
@@ -385,7 +392,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
               <FileText className="h-4 w-4 text-sky-400 shrink-0" />
               <span>Introduction / Overview</span>
             </div>
-            <p className="text-sm text-marine-text print:text-slate-800 leading-relaxed whitespace-pre-line break-words break-all">
+            <p className="text-sm text-marine-text print:text-slate-800 leading-relaxed whitespace-pre-line break-words">
               {guide.introduction}
             </p>
           </div>
@@ -406,7 +413,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                 return (
                   <div
                     key={step.id || index}
-                    className="rounded-xl border border-marine-border print:border-slate-300 bg-marine-card print:bg-white p-5 space-y-4 shadow-sm w-full overflow-hidden"
+                    className="rounded-xl border border-marine-border print:border-slate-300 bg-marine-card print:bg-white p-4 sm:p-5 space-y-4 shadow-sm w-full overflow-hidden"
                   >
                     {/* Step Title Header Block */}
                     <div className="flex items-start gap-3">
@@ -417,7 +424,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                         <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-400 print:text-slate-600 block">
                           Step {stepNum} Action
                         </span>
-                        <h3 className="text-base font-semibold text-marine-text print:text-black leading-snug break-words break-all">
+                        <h3 className="text-base font-semibold text-marine-text print:text-black leading-snug break-words">
                           {stepTitle}
                         </h3>
                       </div>
@@ -429,7 +436,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                         <span className="text-[11px] font-bold uppercase tracking-wider text-marine-muted print:text-slate-500 block mb-1.5">
                           Instruction &amp; Procedure
                         </span>
-                        <p className="text-sm text-marine-text print:text-slate-800 leading-relaxed whitespace-pre-line break-words break-all">
+                        <p className="text-sm text-marine-text print:text-slate-800 leading-relaxed whitespace-pre-line break-words">
                           {step.instruction}
                         </p>
                       </div>
@@ -443,14 +450,14 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                           <span className="text-[11px] font-bold uppercase tracking-wider text-marine-warn print:text-amber-700 block">
                             Caution / Safety Note
                           </span>
-                          <p className="text-xs text-marine-warn/90 print:text-amber-900 leading-relaxed font-medium break-words break-all">
+                          <p className="text-xs text-marine-warn/90 print:text-amber-900 leading-relaxed font-medium break-words">
                             {step.warning || step.tip}
                           </p>
                         </div>
                       </div>
                     )}
 
-                    {/* Step-specific Attachments with Fast Loading */}
+                    {/* Step-specific Attachments */}
                     {stepAttachments.length > 0 && (
                       <div className="sm:ml-11 pt-3 border-t border-marine-border/60 print:border-slate-300">
                         <span className="text-[11px] font-bold text-sky-400 print:text-slate-600 uppercase tracking-wider block mb-2.5 flex items-center gap-1.5">

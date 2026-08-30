@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marine-fix-v3';
+const CACHE_NAME = 'marine-fix-v4';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -34,16 +34,25 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: Only intercept GET requests
+// Fetch: Intercept requests
 self.addEventListener('fetch', (event) => {
-  // NEVER intercept POST, PUT, DELETE, PATCH API requests (Allows bookmark & uploads)
   if (event.request.method !== 'GET') {
     return;
   }
 
   const url = new URL(event.request.url);
 
-  // API endpoints should always bypass cache directly to network
+  // 1. External URLs (GitHub CDN, etc.) - NEVER intercept
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // 2. Direct Binary Downloads (.apk) - NEVER intercept
+  if (url.pathname.endsWith('.apk') || url.pathname.includes('MarineFix.apk')) {
+    return;
+  }
+
+  // 3. API endpoints bypass
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request).catch(() => new Response(JSON.stringify({ error: 'Offline' }), {
@@ -53,7 +62,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // JS, CSS and module assets direct network fetch
+  // 4. JS, CSS and module assets
   if (url.pathname.startsWith('/assets/') || url.pathname.endsWith('.js') || url.pathname.endsWith('.css')) {
     event.respondWith(
       fetch(event.request).catch(() => caches.match(event.request))
@@ -61,7 +70,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML and other assets
+  // 5. HTML and other assets fallback
   event.respondWith(
     fetch(event.request)
       .catch(async () => {
