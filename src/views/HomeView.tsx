@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { ArrowRight, Wrench, BookOpen } from "lucide-react";
+import { ArrowRight, Wrench, BookOpen, Download } from "lucide-react";
 import type { Category, Equipment } from "../types";
 import { navigate } from "../lib/router";
 
@@ -41,14 +41,6 @@ export function HomeView({ categories, equipment, totalGuides }: Props) {
     [categories]
   );
 
-  const stats = useMemo(() => {
-    return {
-      departments: departments.length,
-      equipment: equipment.length,
-      guides: totalGuides,
-    };
-  }, [departments, equipment, totalGuides]);
-
   return (
     <div className="animate-fade-in flex flex-col min-h-full">
       <div className="flex-1 pb-16">
@@ -73,9 +65,11 @@ export function HomeView({ categories, equipment, totalGuides }: Props) {
             <p className="mt-4 text-marine-muted text-base lg:text-lg max-w-3xl leading-relaxed">
               Step-by-step electrical diagnostic guides for marine ETOs, engineers, and electricians. Even if a problem seems basic or familiar, what is simple to one can be a vital lifeline to a beginner or someone facing it for the first time onboard. Let’s share knowledge, help each other out, and grow together.
             </p>
+
+            {/* Stats & Actions */}
             <div className="mt-8 flex flex-wrap gap-6 items-center">
-              <Stat label="Departments" value={stats.departments} />
-              <Stat label="Equipment" value={stats.equipment} />
+              <Stat label="Departments" value={departments.length} />
+              <Stat label="Equipment" value={equipment.length} />
               
               <button
                 type="button"
@@ -85,7 +79,7 @@ export function HomeView({ categories, equipment, totalGuides }: Props) {
               >
                 <div>
                   <div className="text-3xl font-bold text-marine-accent flex items-center gap-1.5">
-                    {stats.guides}
+                    {totalGuides}
                     <ArrowRight className="h-5 w-5 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all text-marine-accent" />
                   </div>
                   <div className="text-xs uppercase tracking-wider text-marine-accent font-semibold flex items-center gap-1">
@@ -93,6 +87,16 @@ export function HomeView({ categories, equipment, totalGuides }: Props) {
                   </div>
                 </div>
               </button>
+
+              {/* Direct APK Download Button */}
+              <a
+                href="/marinefix.apk"
+                download="MarineFix.apk"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs tracking-wide shadow-lg shadow-emerald-950/40 transition-all cursor-pointer border border-emerald-400/30"
+              >
+                <Download className="w-4 h-4 text-white" />
+                Download App (.APK)
+              </a>
             </div>
           </div>
         </section>
@@ -116,7 +120,7 @@ export function HomeView({ categories, equipment, totalGuides }: Props) {
                   <img 
                     src={item.img} 
                     alt={item.name} 
-                    loading="eager"
+                    loading="lazy"
                     decoding="async"
                     className="h-full w-full object-cover object-center transition-transform duration-500 group-hover:scale-105" 
                   />
