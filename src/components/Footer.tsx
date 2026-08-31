@@ -4,7 +4,7 @@ type Props = {
   contactEmail?: string;
 };
 
-export function Footer({ contactEmail = "marinerdk001@gmail.com" }: Props) {
+export function Footer({ contactEmail = "marinefix.official@gmail.com" }: Props) {
   return (
     <footer className="border-t border-marine-border bg-marine-dark/40 py-8 px-6 lg:px-10 mt-auto">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
