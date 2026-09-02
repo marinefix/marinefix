@@ -4,7 +4,6 @@ compatibility_date = "2026-08-27"
 [[d1_databases]]
 binding = "DB"
 database_name = "marinefix-db"
-database_id = "5037b7da-5614-4801-84b2-676e31a80201"
 
 [[r2_buckets]]
 binding = "STORAGE"
