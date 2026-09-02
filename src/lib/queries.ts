@@ -7,17 +7,15 @@ import type {
 
 // Helper function for Cloudflare Pages API calls
 async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  // Always use absolute URL for mobile/Capacitor environment or if running inside a native wrapper
-  const isMobileApp = window.location.protocol === 'capacitor:' || window.location.protocol === 'file:' || !window.location.origin.includes('localhost');
-  const baseUrl = isMobileApp ? 'https://marinefix.pages.dev' : '';
-  
-  const url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint}`;
-  
+  const url = endpoint.startsWith("http") ? endpoint : endpoint;
+
   const res = await fetch(url, options);
+
   if (!res.ok) {
     const errText = await res.text().catch(() => "Unknown error");
     throw new Error(errText || `API error: ${res.status}`);
   }
+
   return res.json();
 }
 
@@ -176,14 +174,14 @@ export async function removeBookmark(guideId: string): Promise<void> {
 export async function uploadImage(file: File): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
-  // Using apiFetch helper logic or full URL for upload endpoint if needed
-  const isMobileApp = window.location.protocol === 'capacitor:' || window.location.protocol === 'file:' || !window.location.origin.includes('localhost');
-  const baseUrl = isMobileApp ? 'https://marinefix.pages.dev' : '';
-  const res = await fetch(`${baseUrl}/api/upload`, {
+
+  const res = await fetch("/api/upload", {
     method: "POST",
     body: formData,
   });
+
   if (!res.ok) throw new Error("Failed to upload image to R2");
+
   const data = (await res.json()) as { url: string };
   return data.url;
 }
@@ -197,7 +195,12 @@ export async function createGuide(input: {
   safety_ppe?: string[];
   tools_required?: string[];
   introduction?: string;
-  steps: { title: string; instruction: string; warning?: string; images?: any[] }[];
+  steps: {
+    title: string;
+    instruction: string;
+    warning?: string;
+    images?: any[];
+  }[];
   image_urls: { url: string; caption?: string }[];
   status?: string;
   is_approved?: boolean;
@@ -212,7 +215,9 @@ export async function createGuide(input: {
 export async function getPendingGuides(): Promise<
   (Guide & { equipment?: Equipment })[]
 > {
-  return apiFetch<(Guide & { equipment?: Equipment })[]>("/api/guides?pending=true");
+  return apiFetch<(Guide & { equipment?: Equipment })[]>(
+    "/api/guides?pending=true"
+  );
 }
 
 export async function approveGuide(guideId: string): Promise<void> {
