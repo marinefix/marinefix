@@ -1,5 +1,6 @@
 interface Env {
   DB: D1Database;
+  STORAGE: R2Bucket;
 }
 
 export const onRequestGet: PagesFunction<Env> = async (context) => {
@@ -184,7 +185,56 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   }
 };
 
-// Admin Approve / Reject (PATCH) - Reject seiyyum podhu automatic-aga database-il irundhu complete-aga erase aagum
+// Helper function to cleanup R2 storage images for a guide
+async function deleteGuideR2Images(context: EventContext<Env, any, any>, guideId: string) {
+  try {
+    if (!context.env.STORAGE) return;
+
+    // 1. Fetch images from guide_images table
+    const { results: images } = await context.env.DB.prepare(
+      "SELECT url FROM guide_images WHERE guide_id = ?"
+    ).bind(guideId).all();
+
+    for (const img of (images || [])) {
+      try {
+        const urlObj = new URL((img as any).url, "http://localhost");
+        const key = urlObj.searchParams.get("key");
+        if (key) {
+          await context.env.STORAGE.delete(key);
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+
+    // 2. Fetch step images from guide_steps table
+    const { results: steps } = await context.env.DB.prepare(
+      "SELECT images FROM guide_steps WHERE guide_id = ?"
+    ).bind(guideId).all();
+
+    for (const step of (steps || [])) {
+      try {
+        const imgs = JSON.parse((step as any).images || "[]");
+        for (const imgItem of imgs) {
+          const imgUrl = typeof imgItem === "string" ? imgItem : imgItem.url;
+          if (imgUrl) {
+            const urlObj = new URL(imgUrl, "http://localhost");
+            const key = urlObj.searchParams.get("key");
+            if (key) {
+              await context.env.STORAGE.delete(key);
+            }
+          }
+        }
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+  } catch (err) {
+    console.error("R2 cleanup error:", err);
+  }
+}
+
+// Admin Approve / Reject (PATCH)
 export const onRequestPatch: PagesFunction<Env> = async (context) => {
   try {
     const { id, action } = (await context.request.json()) as any;
@@ -202,12 +252,16 @@ export const onRequestPatch: PagesFunction<Env> = async (context) => {
     }
 
     if (action === "reject") {
+      // Clean up R2 storage files first
+      await deleteGuideR2Images(context, id);
+
+      // Clean up D1 database records
       await context.env.DB.prepare("DELETE FROM guide_steps WHERE guide_id = ?").bind(id).run();
       await context.env.DB.prepare("DELETE FROM guide_images WHERE guide_id = ?").bind(id).run();
       await context.env.DB.prepare("DELETE FROM bookmarks WHERE guide_id = ?").bind(id).run();
       await context.env.DB.prepare("DELETE FROM guides WHERE id = ?").bind(id).run();
 
-      return Response.json({ success: true, message: "Guide rejected and permanently deleted from database" });
+      return Response.json({ success: true, message: "Guide rejected and permanently deleted from database & storage" });
     }
 
     return new Response("Invalid action", { status: 400 });
@@ -226,12 +280,16 @@ export const onRequestDelete: PagesFunction<Env> = async (context) => {
       return new Response("Missing guide ID", { status: 400 });
     }
 
+    // Clean up R2 storage files first
+    await deleteGuideR2Images(context, guideId);
+
+    // Clean up D1 database records
     await context.env.DB.prepare("DELETE FROM guide_steps WHERE guide_id = ?").bind(guideId).run();
     await context.env.DB.prepare("DELETE FROM guide_images WHERE guide_id = ?").bind(guideId).run();
     await context.env.DB.prepare("DELETE FROM bookmarks WHERE guide_id = ?").bind(guideId).run();
     await context.env.DB.prepare("DELETE FROM guides WHERE id = ?").bind(guideId).run();
 
-    return Response.json({ success: true, message: "Guide deleted permanently" });
+    return Response.json({ success: true, message: "Guide deleted permanently from database & storage" });
   } catch (err: any) {
     console.error("Delete error:", err);
     return new Response(err.message, { status: 500 });
