@@ -144,6 +144,16 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         return new Response("Guide not found", { status: 404 });
       }
 
+      // Pending guides require admin authentication.
+      if ((guide as any).is_approved !== 1) {
+        const authError = await requireAdmin(
+          context.request,
+          context.env
+        );
+
+        if (authError) return authError;
+      }
+
       const { results: steps } = await context.env.DB.prepare(
         "SELECT * FROM guide_steps WHERE guide_id = ? ORDER BY step_number ASC"
       )
