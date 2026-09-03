@@ -1,5 +1,3 @@
-// Admin Authentication & Stealth Session Manager
-const ADMIN_PASSCODE = "Aparna"; // Neenga virumbina secret PIN/password maathikalam
 const STORAGE_KEY = "marinefix_admin_session";
 
 export function checkIsAdmin(): boolean {
@@ -7,13 +5,33 @@ export function checkIsAdmin(): boolean {
   return localStorage.getItem(STORAGE_KEY) === "authenticated";
 }
 
-export function authenticateAdmin(passcode: string): boolean {
-  if (passcode.trim() === ADMIN_PASSCODE) {
-    localStorage.setItem(STORAGE_KEY, "authenticated");
-    window.dispatchEvent(new Event("admin_session_changed"));
-    return true;
+export async function authenticateAdmin(passcode: string): Promise<boolean> {
+  try {
+    const response = await fetch("/api/admin-login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify({ passcode }),
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const data = await response.json();
+
+    if (data.success === true) {
+      localStorage.setItem(STORAGE_KEY, "authenticated");
+      window.dispatchEvent(new Event("admin_session_changed"));
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
   }
-  return false;
 }
 
 export function logoutAdmin(): void {
