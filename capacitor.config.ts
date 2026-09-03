@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Marine Fix',
   webDir: 'dist',
   server: {
-    url: 'https://marinefix.pages.dev',
+    url: 'https://marinefixapp.pages.dev',
     cleartext: true
   }
 };
