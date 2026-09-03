@@ -2,6 +2,7 @@ const STORAGE_KEY = "marinefix_admin_session";
 
 export function checkIsAdmin(): boolean {
   if (typeof window === "undefined") return false;
+
   return localStorage.getItem(STORAGE_KEY) === "authenticated";
 }
 
@@ -34,7 +35,14 @@ export async function authenticateAdmin(passcode: string): Promise<boolean> {
   }
 }
 
-export function logoutAdmin(): void {
-  localStorage.removeItem(STORAGE_KEY);
-  window.dispatchEvent(new Event("admin_session_changed"));
+export async function logoutAdmin(): Promise<void> {
+  try {
+    await fetch("/api/admin-logout", {
+      method: "POST",
+      credentials: "include",
+    });
+  } finally {
+    localStorage.removeItem(STORAGE_KEY);
+    window.dispatchEvent(new Event("admin_session_changed"));
+  }
 }

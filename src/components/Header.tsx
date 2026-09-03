@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { Anchor, Bookmark, PlusCircle, ShieldAlert, Menu, LogOut, Smartphone } from "lucide-react";
+import {
+  Anchor,
+  Bookmark,
+  PlusCircle,
+  ShieldAlert,
+  Menu,
+  LogOut,
+  Smartphone,
+} from "lucide-react";
 import { SearchBar } from "./SearchBar";
 import { navigate } from "../lib/router";
 import { checkIsAdmin, logoutAdmin } from "../lib/adminAuth";
@@ -20,12 +28,15 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
         window.matchMedia("(display-mode: standalone)").matches ||
         (window.navigator as any).standalone === true ||
         document.referrer.includes("android-app://");
+
       setIsApp(isStandalone);
     };
 
     checkAppMode();
+
     const mediaQuery = window.matchMedia("(display-mode: standalone)");
     mediaQuery.addEventListener("change", checkAppMode);
+
     return () => mediaQuery.removeEventListener("change", checkAppMode);
   }, []);
 
@@ -45,18 +56,23 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
     };
 
     handleHashCheck();
+
     window.addEventListener("hashchange", handleHashCheck);
     window.addEventListener("admin_session_changed", handleSessionChange);
 
     return () => {
       window.removeEventListener("hashchange", handleHashCheck);
-      window.removeEventListener("admin_session_changed", handleSessionChange);
+      window.removeEventListener(
+        "admin_session_changed",
+        handleSessionChange
+      );
     };
   }, []);
 
   const handleAdminSuccess = () => {
     setShowAdminModal(false);
     setIsAdmin(true);
+
     if (window.location.hash === "#admin") {
       window.history.replaceState(null, "", window.location.pathname);
     }
@@ -64,17 +80,23 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
 
   const handleCloseModal = () => {
     setShowAdminModal(false);
+
     if (window.location.hash === "#admin") {
       window.history.replaceState(null, "", window.location.pathname);
     }
   };
 
-  const handleLogout = () => {
-    logoutAdmin();
-    if (window.location.pathname.includes("admin-pending") || window.location.search.includes("admin-pending")) {
+  const handleLogout = async () => {
+    await logoutAdmin();
+
+    if (
+      window.location.pathname.includes("admin-pending") ||
+      window.location.search.includes("admin-pending")
+    ) {
       navigate({ name: "home" });
     } else {
       const currentPath = window.location.pathname;
+
       if (currentPath === "/admin-pending") {
         navigate({ name: "home" });
       }
@@ -102,7 +124,9 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
               title="Return to Home Dashboard"
             >
               <Anchor className="h-6 w-6" />
-              <span className="text-marine-text font-extrabold">MARINE FIX</span>
+              <span className="text-marine-text font-extrabold">
+                MARINE FIX
+              </span>
             </button>
           </div>
 
@@ -111,7 +135,6 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {/* Direct APK Download Link - Laptop/Desktop Only (Hidden on Mobile & Inside App) */}
             {!isApp && (
               <a
                 href="/MarineFix.apk"
@@ -124,7 +147,6 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
               </a>
             )}
 
-            {/* Post Guide - Desktop Only */}
             <button
               type="button"
               onClick={() => navigate({ name: "add-guide" })}
@@ -135,7 +157,6 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
               <span>Post Guide</span>
             </button>
 
-            {/* Admin Controls */}
             {isAdmin && (
               <>
                 <button
@@ -159,7 +180,6 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
               </>
             )}
 
-            {/* Saved Bookmarks Button */}
             <button
               type="button"
               onClick={() => navigate({ name: "bookmarks" })}
