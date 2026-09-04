@@ -18,7 +18,11 @@ import {
 } from "lucide-react";
 import type { GuideWithRelations } from "../types";
 import { fetchGuideById, addBookmark, removeBookmark } from "../lib/queries";
-import { saveGuideOffline, removeGuideOffline, getOfflineGuideById } from "../lib/offlineStorage";
+import {
+  saveGuideOffline,
+  removeGuideOffline,
+  getOfflineGuideById,
+} from "../lib/offlineStorage";
 import { navigate } from "../lib/router";
 import { Lightbox } from "../components/Lightbox";
 import { checkIsAdmin } from "../lib/adminAuth";
@@ -29,7 +33,11 @@ type Props = {
   onBookmarkChange: (id: string, saved: boolean) => void;
 };
 
-export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
+export function GuideView({
+  guideId,
+  isBookmarked,
+  onBookmarkChange,
+}: Props) {
   const [guide, setGuide] = useState<GuideWithRelations | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,73 +48,109 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
 
   useEffect(() => {
     let active = true;
+
     setLoading(true);
     setError(null);
 
     fetchGuideById(guideId)
       .then((g) => {
-        if (active) {
-          setGuide(g);
-          if (isBookmarked && g) {
-            saveGuideOffline(g);
-          }
+        if (!active) return;
+
+        setGuide(g);
+
+        // If already saved, refresh the local copy and attachments.
+        if (isBookmarked && g) {
+          void saveGuideOffline(g);
         }
       })
       .catch((e) => {
-        if (active) {
-          const cached = getOfflineGuideById(guideId);
-          if (cached) {
-            setGuide(cached);
-          } else {
-            setError(e.message);
-          }
+        if (!active) return;
+
+        // Internet unavailable -> load saved offline guide.
+        const cached = getOfflineGuideById(guideId);
+
+        if (cached) {
+          setGuide(cached);
+        } else {
+          setError(e instanceof Error ? e.message : "Failed to load guide.");
         }
       })
-      .finally(() => active && setLoading(false));
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
 
-    const handleSessionChange = () => setIsAdmin(checkIsAdmin());
-    window.addEventListener("admin_session_changed", handleSessionChange);
+    const handleSessionChange = () => {
+      setIsAdmin(checkIsAdmin());
+    };
+
+    window.addEventListener(
+      "admin_session_changed",
+      handleSessionChange
+    );
 
     return () => {
       active = false;
-      window.removeEventListener("admin_session_changed", handleSessionChange);
+      window.removeEventListener(
+        "admin_session_changed",
+        handleSessionChange
+      );
     };
   }, [guideId, isBookmarked]);
 
   async function toggleBookmark() {
     if (!guide) return;
+
     setSavingBookmark(true);
     setError(null);
+
     try {
       if (isBookmarked) {
         await removeBookmark(guide.id);
-        removeGuideOffline(guide.id);
+        await removeGuideOffline(guide.id);
         onBookmarkChange(guide.id, false);
       } else {
         await addBookmark(guide.id);
-        saveGuideOffline(guide);
+
+        // Save guide + all local attachments.
+        await saveGuideOffline(guide);
+
         onBookmarkChange(guide.id, true);
       }
     } catch (e) {
-      setError((e as Error).message);
+      setError(
+        e instanceof Error ? e.message : "Failed to update offline save."
+      );
     } finally {
       setSavingBookmark(false);
     }
   }
 
   async function handleDeleteGuide() {
-    if (!confirm("Are you sure you want to permanently delete this approved guide from the database?")) return;
+    if (
+      !confirm(
+        "Are you sure you want to permanently delete this approved guide from the database?"
+      )
+    ) {
+      return;
+    }
+
     try {
       setDeletingGuide(true);
-      const res = await fetch(`/api/guides?id=${guideId}`, { method: "DELETE" });
+
+      const res = await fetch(`/api/guides?id=${guideId}`, {
+        method: "DELETE",
+      });
+
       if (res.ok) {
-        removeGuideOffline(guideId);
+        await removeGuideOffline(guideId);
         alert("Guide deleted permanently!");
         window.location.href = "/";
       } else {
         alert("Failed to delete guide from database.");
       }
-    } catch (err) {
+    } catch {
       alert("Error deleting guide.");
     } finally {
       setDeletingGuide(false);
@@ -114,11 +158,12 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
   }
 
   const handlePrintSOP = () => {
-    // 1. Native Android App check: Call custom Android Interface
-    if ((window as any).AndroidPrint && typeof (window as any).AndroidPrint.printPage === "function") {
+    if (
+      (window as any).AndroidPrint &&
+      typeof (window as any).AndroidPrint.printPage === "function"
+    ) {
       (window as any).AndroidPrint.printPage();
     } else {
-      // 2. Standard Web Browser: Call window.print()
       window.print();
     }
   };
@@ -126,10 +171,12 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24 text-marine-muted">
-        <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading guide...
+        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+        Loading guide...
       </div>
     );
   }
+
   if (error && !guide) {
     return (
       <div className="p-10 text-center">
@@ -138,15 +185,17 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
       </div>
     );
   }
+
   if (!guide) {
     return (
-      <div className="p-10 text-center text-marine-muted">Guide not found.</div>
+      <div className="p-10 text-center text-marine-muted">
+        Guide not found.
+      </div>
     );
   }
 
   const equipment = guide.equipment;
 
-  // Single Attachment Parser Function
   const parseAttachment = (val: any) => {
     let url = "";
     let isPdf = false;
@@ -154,19 +203,31 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
 
     if (typeof val === "string" && val.trim()) {
       url = val.trim();
-      isPdf = url.toLowerCase().includes(".pdf") || url.startsWith("data:application/pdf");
+      isPdf =
+        url.toLowerCase().includes(".pdf") ||
+        url.startsWith("data:application/pdf");
     } else if (val && typeof val === "object") {
-      url = val.url || val.image_url || val.image || val.publicUrl || "";
-      isPdf = Boolean(val.isPdf) || url.toLowerCase().includes(".pdf") || url.startsWith("data:application/pdf");
+      url =
+        val.url ||
+        val.image_url ||
+        val.image ||
+        val.publicUrl ||
+        "";
+
+      isPdf =
+        Boolean(val.isPdf) ||
+        url.toLowerCase().includes(".pdf") ||
+        url.startsWith("data:application/pdf");
+
       name = val.name || val.caption || "";
     }
 
     return { url, isPdf, name };
   };
 
-  // Step attachments: extracted ONLY from step object
   const getStepAttachments = (step: any) => {
     let raw = step.images || step.step_images || [];
+
     if (typeof raw === "string") {
       try {
         raw = JSON.parse(raw);
@@ -174,32 +235,58 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
         raw = [];
       }
     }
+
     if (!Array.isArray(raw)) return [];
-    return raw.map(parseAttachment).filter((i: any) => i.url);
+
+    return raw
+      .map(parseAttachment)
+      .filter((i: any) => i.url);
   };
 
-  // Overall attachments: extracted ONLY from guide.images (guide_images table)
   const rawGuideImages = guide.images || [];
-  const overallAttachments = (Array.isArray(rawGuideImages) ? rawGuideImages : [])
-    .map(parseAttachment)
-    .filter((item, idx, self) => item.url && self.findIndex((t) => t.url === item.url) === idx);
 
-  // Lightbox list
+  const overallAttachments = (
+    Array.isArray(rawGuideImages) ? rawGuideImages : []
+  )
+    .map(parseAttachment)
+    .filter(
+      (item, idx, self) =>
+        item.url &&
+        self.findIndex((t) => t.url === item.url) === idx
+    );
+
   const lightboxItems: { url: string; name: string }[] = [];
+
   if (guide.steps && guide.steps.length > 0) {
     guide.steps.forEach((step: any, idx: number) => {
       const stepNum = step.step_number || idx + 1;
       const stepAtts = getStepAttachments(step);
-      stepAtts.forEach((att) => {
-        if (!att.isPdf && att.url && !lightboxItems.some((x) => x.url === att.url)) {
-          lightboxItems.push({ url: att.url, name: att.name || `Step ${stepNum} Drawing` });
+
+      stepAtts.forEach((att: any) => {
+        if (
+          !att.isPdf &&
+          att.url &&
+          !lightboxItems.some((x) => x.url === att.url)
+        ) {
+          lightboxItems.push({
+            url: att.url,
+            name: att.name || `Step ${stepNum} Drawing`,
+          });
         }
       });
     });
   }
-  overallAttachments.forEach((att) => {
-    if (!att.isPdf && att.url && !lightboxItems.some((x) => x.url === att.url)) {
-      lightboxItems.push({ url: att.url, name: att.name || "Schematic Drawing" });
+
+  overallAttachments.forEach((att: any) => {
+    if (
+      !att.isPdf &&
+      att.url &&
+      !lightboxItems.some((x) => x.url === att.url)
+    ) {
+      lightboxItems.push({
+        url: att.url,
+        name: att.name || "Schematic Drawing",
+      });
     }
   });
 
@@ -208,6 +295,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
 
   function openLightboxByUrl(targetUrl: string) {
     const idx = lightboxUrls.indexOf(targetUrl);
+
     if (idx !== -1) {
       setLightboxIndex(idx);
     } else {
@@ -218,17 +306,23 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
   }
 
   function nextImg() {
-    setLightboxIndex((i) => (i === null ? 0 : (i + 1) % lightboxUrls.length));
+    setLightboxIndex((i) =>
+      i === null ? 0 : (i + 1) % lightboxUrls.length
+    );
   }
+
   function prevImg() {
-    setLightboxIndex((i) => (i === null ? 0 : (i - 1 + lightboxUrls.length) % lightboxUrls.length));
+    setLightboxIndex((i) =>
+      i === null
+        ? 0
+        : (i - 1 + lightboxUrls.length) % lightboxUrls.length
+    );
   }
 
   const authorEmail = (guide as any).author_email;
 
   return (
     <div className="animate-fade-in print:bg-white print:text-black w-full min-w-0">
-      {/* Navigation Breadcrumb */}
       <div className="flex items-center gap-1 text-sm text-marine-muted px-4 sm:px-6 py-3 lg:px-10 border-b border-marine-border flex-wrap print:hidden">
         <button
           onClick={() => navigate({ name: "home" })}
@@ -236,37 +330,48 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
         >
           Home
         </button>
+
         {equipment && (
           <>
             <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+
             <button
-              onClick={() => navigate({ name: "equipment", id: equipment.id })}
+              onClick={() =>
+                navigate({
+                  name: "equipment",
+                  id: equipment.id,
+                })
+              }
               className="hover:text-marine-accent transition cursor-pointer"
             >
               {equipment.name}
             </button>
           </>
         )}
+
         <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-        <span className="text-marine-text line-clamp-1">{guide.title}</span>
+
+        <span className="text-marine-text line-clamp-1">
+          {guide.title}
+        </span>
       </div>
 
-      {/* Main Content Area */}
       <article className="px-4 sm:px-6 py-6 lg:px-10 w-full max-w-6xl print:max-w-full print:px-0 print:py-2">
         <button
           onClick={() => window.history.back()}
           className="flex items-center gap-1 text-sm text-marine-muted hover:text-marine-accent transition mb-4 cursor-pointer print:hidden"
         >
-          <ArrowLeft className="h-4 w-4" /> Back
+          <ArrowLeft className="h-4 w-4" />
+          Back
         </button>
 
         {error && (
           <div className="flex items-center gap-2 text-marine-error text-sm p-3 rounded-lg bg-marine-error/10 border border-marine-error/30 mb-4 print:hidden">
-            <AlertCircle className="h-4 w-4 shrink-0" /> {error}
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            {error}
           </div>
         )}
 
-        {/* Responsive Header Section */}
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-marine-text print:text-black leading-tight flex-1 break-words">
             {guide.title}
@@ -317,6 +422,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
               ) : (
                 <Bookmark className="h-4 w-4" />
               )}
+
               {isBookmarked ? "Saved Offline" : "Save Offline"}
             </button>
           </div>
@@ -324,7 +430,10 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
 
         {authorEmail && (
           <div className="mb-6 flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-marine-muted print:text-slate-600 font-medium">Author Contact:</span>
+            <span className="text-xs text-marine-muted print:text-slate-600 font-medium">
+              Author Contact:
+            </span>
+
             <a
               href={`mailto:${authorEmail}`}
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-400 print:text-sky-700 text-xs font-semibold hover:bg-sky-500/20 transition break-all"
@@ -340,7 +449,9 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
             <div className="text-xs uppercase tracking-wider text-marine-muted font-semibold mb-1">
               Symptom
             </div>
-            <p className="text-marine-text print:text-black break-words">{guide.symptom}</p>
+            <p className="text-marine-text print:text-black break-words">
+              {guide.symptom}
+            </p>
           </div>
         )}
 
@@ -350,9 +461,11 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
               <ShieldAlert className="h-5 w-5" />
               <span>Safety &amp; PPE — Isolation Required</span>
             </div>
+
             <p className="text-sm text-marine-warn/90 print:text-amber-900 mb-3">
               Ensure the following PPE is worn and isolation is confirmed before beginning work.
             </p>
+
             <div className="flex flex-wrap gap-2">
               {guide.safety_ppe.map((p) => (
                 <span
@@ -372,6 +485,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
               <Wrench className="h-5 w-5" />
               <span>Tools Required</span>
             </div>
+
             <div className="flex flex-wrap gap-2">
               {guide.tools_required.map((t) => (
                 <span
@@ -385,71 +499,78 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
           </div>
         )}
 
-        {/* Introduction / Overview Box */}
         {guide.introduction && (
           <div className="mb-6 p-4 rounded-xl bg-marine-card print:bg-slate-100 border border-marine-border print:border-slate-300 w-full overflow-hidden">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-marine-muted print:text-slate-600 mb-2">
               <FileText className="h-4 w-4 text-sky-400 shrink-0" />
               <span>Introduction / Overview</span>
             </div>
+
             <p className="text-sm text-marine-text print:text-slate-800 leading-relaxed whitespace-pre-line break-words">
               {guide.introduction}
             </p>
           </div>
         )}
 
-        {/* Diagnostic Steps Section */}
         {guide.steps && guide.steps.length > 0 && (
           <section className="mb-8 space-y-4 w-full">
             <h2 className="text-xl font-bold text-marine-text print:text-black flex items-center gap-2">
               Diagnostic Steps
             </h2>
+
             <div className="space-y-4 w-full">
               {guide.steps.map((step: any, index: number) => {
                 const stepNum = step.step_number || index + 1;
                 const stepAttachments = getStepAttachments(step);
-                const stepTitle = step.title && step.title.trim() ? step.title.trim() : `Step ${stepNum} Procedure`;
+
+                const stepTitle =
+                  step.title && step.title.trim()
+                    ? step.title.trim()
+                    : `Step ${stepNum} Procedure`;
 
                 return (
                   <div
                     key={step.id || index}
                     className="rounded-xl border border-marine-border print:border-slate-300 bg-marine-card print:bg-white p-4 sm:p-5 space-y-4 shadow-sm w-full overflow-hidden"
                   >
-                    {/* Step Title Header Block */}
                     <div className="flex items-start gap-3">
                       <span className="flex items-center justify-center h-8 w-8 rounded-full bg-marine-accent print:bg-slate-800 text-marine-base print:text-white font-bold text-sm shrink-0 mt-0.5 shadow-sm">
                         {stepNum}
                       </span>
+
                       <div className="space-y-1 flex-1 min-w-0">
                         <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-400 print:text-slate-600 block">
                           Step {stepNum} Action
                         </span>
+
                         <h3 className="text-base font-semibold text-marine-text print:text-black leading-snug break-words">
                           {stepTitle}
                         </h3>
                       </div>
                     </div>
 
-                    {/* Step Instruction Box */}
-                    {step.instruction && step.instruction.trim() && (
-                      <div className="bg-marine-dark/70 print:bg-slate-50 border border-marine-border/80 print:border-slate-200 rounded-xl p-4 sm:ml-11 overflow-hidden">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-marine-muted print:text-slate-500 block mb-1.5">
-                          Instruction &amp; Procedure
-                        </span>
-                        <p className="text-sm text-marine-text print:text-slate-800 leading-relaxed whitespace-pre-line break-words">
-                          {step.instruction}
-                        </p>
-                      </div>
-                    )}
+                    {step.instruction &&
+                      step.instruction.trim() && (
+                        <div className="bg-marine-dark/70 print:bg-slate-50 border border-marine-border/80 print:border-slate-200 rounded-xl p-4 sm:ml-11 overflow-hidden">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-marine-muted print:text-slate-500 block mb-1.5">
+                            Instruction &amp; Procedure
+                          </span>
 
-                    {/* Caution / Warning Box */}
+                          <p className="text-sm text-marine-text print:text-slate-800 leading-relaxed whitespace-pre-line break-words">
+                            {step.instruction}
+                          </p>
+                        </div>
+                      )}
+
                     {(step.warning || step.tip) && (
                       <div className="bg-marine-warn/10 print:bg-amber-50 border border-marine-warn/30 print:border-amber-300 rounded-xl p-4 sm:ml-11 flex items-start gap-3 overflow-hidden">
                         <AlertTriangle className="h-5 w-5 text-marine-warn print:text-amber-600 shrink-0 mt-0.5" />
+
                         <div className="space-y-1 min-w-0 flex-1">
                           <span className="text-[11px] font-bold uppercase tracking-wider text-marine-warn print:text-amber-700 block">
                             Caution / Safety Note
                           </span>
+
                           <p className="text-xs text-marine-warn/90 print:text-amber-900 leading-relaxed font-medium break-words">
                             {step.warning || step.tip}
                           </p>
@@ -457,56 +578,65 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                       </div>
                     )}
 
-                    {/* Step-specific Attachments */}
                     {stepAttachments.length > 0 && (
                       <div className="sm:ml-11 pt-3 border-t border-marine-border/60 print:border-slate-300">
                         <span className="text-[11px] font-bold text-sky-400 print:text-slate-600 uppercase tracking-wider block mb-2.5 flex items-center gap-1.5">
-                          <ImageIcon className="h-3.5 w-3.5" /> Step {stepNum} Schematic / Drawing ({stepAttachments.length}):
+                          <ImageIcon className="h-3.5 w-3.5" />
+                          Step {stepNum} Schematic / Drawing ({stepAttachments.length}):
                         </span>
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {stepAttachments.map((parsed: any, attIdx: number) => (
-                            <div
-                              key={attIdx}
-                              className="p-3 bg-marine-dark/90 print:bg-slate-100 rounded-xl border border-marine-border print:border-slate-300 flex items-center justify-between text-xs"
-                            >
-                              {parsed.isPdf ? (
-                                <div className="flex items-center justify-between w-full">
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <FileText className="h-5 w-5 text-rose-400 shrink-0" />
-                                    <span
-                                      className="text-xs font-semibold text-marine-text print:text-black truncate max-w-[140px]"
-                                      title={parsed.name}
+                          {stepAttachments.map(
+                            (parsed: any, attIdx: number) => (
+                              <div
+                                key={attIdx}
+                                className="p-3 bg-marine-dark/90 print:bg-slate-100 rounded-xl border border-marine-border print:border-slate-300 flex items-center justify-between text-xs"
+                              >
+                                {parsed.isPdf ? (
+                                  <div className="flex items-center justify-between w-full">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <FileText className="h-5 w-5 text-rose-400 shrink-0" />
+
+                                      <span
+                                        className="text-xs font-semibold text-marine-text print:text-black truncate max-w-[140px]"
+                                        title={parsed.name}
+                                      >
+                                        {parsed.name ||
+                                          `Step ${stepNum} Document`}
+                                      </span>
+                                    </div>
+
+                                    <a
+                                      href={parsed.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-500/20 text-rose-300 print:text-rose-700 hover:bg-rose-500/30 border border-rose-500/30 rounded-lg text-[11px] font-bold transition shrink-0"
                                     >
-                                      {parsed.name || `Step ${stepNum} Document`}
-                                    </span>
+                                      <ExternalLink className="h-3 w-3" />
+                                      View PDF
+                                    </a>
                                   </div>
-                                  <a
-                                    href={parsed.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-500/20 text-rose-300 print:text-rose-700 hover:bg-rose-500/30 border border-rose-500/30 rounded-lg text-[11px] font-bold transition shrink-0"
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openLightboxByUrl(parsed.url)
+                                    }
+                                    className="group relative w-full flex items-center justify-center bg-black/60 rounded-lg overflow-hidden border border-marine-border hover:border-marine-accent/60 transition cursor-pointer p-1 min-h-[160px]"
+                                    title="Click to Zoom Fullscreen"
                                   >
-                                    <ExternalLink className="h-3 w-3" /> View PDF
-                                  </a>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => openLightboxByUrl(parsed.url)}
-                                  className="group relative w-full flex items-center justify-center bg-black/60 rounded-lg overflow-hidden border border-marine-border hover:border-marine-accent/60 transition cursor-pointer p-1 min-h-[160px]"
-                                  title="Click to Zoom Fullscreen"
-                                >
-                                  <img
-                                    src={parsed.url}
-                                    alt={`Step ${stepNum}`}
-                                    loading="lazy"
-                                    decoding="async"
-                                    className="max-h-48 w-full object-contain rounded group-hover:scale-105 transition-transform duration-300"
-                                  />
-                                </button>
-                              )}
-                            </div>
-                          ))}
+                                    <img
+                                      src={parsed.url}
+                                      alt={`Step ${stepNum}`}
+                                      loading="lazy"
+                                      decoding="async"
+                                      className="max-h-48 w-full object-contain rounded group-hover:scale-105 transition-transform duration-300"
+                                    />
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          )}
                         </div>
                       </div>
                     )}
@@ -517,12 +647,12 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
           </section>
         )}
 
-        {/* Overall Schematics & Diagrams Section */}
         {overallAttachments.length > 0 && (
           <section className="mb-8 w-full">
             <h2 className="text-xl font-bold text-marine-text print:text-black mb-2">
               Overall Schematics &amp; Diagrams ({overallAttachments.length})
             </h2>
+
             <div className="grid gap-4 sm:grid-cols-2">
               {overallAttachments.map((item: any, i: number) => (
                 <div
@@ -534,6 +664,7 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                       <div className="p-3 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
                         <FileText className="h-8 w-8" />
                       </div>
+
                       <div>
                         <span
                           className="text-xs font-bold text-marine-text print:text-black block truncate max-w-[200px]"
@@ -542,13 +673,15 @@ export function GuideView({ guideId, isBookmarked, onBookmarkChange }: Props) {
                           {item.name || "PDF Schematic Document"}
                         </span>
                       </div>
+
                       <a
                         href={item.url}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-500/20 text-rose-300 print:text-rose-700 hover:bg-rose-500/30 border border-rose-500/30 rounded-lg text-xs font-bold transition"
                       >
-                        <ExternalLink className="h-3.5 w-3.5" /> View PDF
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        View PDF
                       </a>
                     </div>
                   ) : (
