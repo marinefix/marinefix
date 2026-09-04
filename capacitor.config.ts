@@ -1,13 +1,9 @@
-﻿import type { CapacitorConfig } from '@capacitor/cli';
+﻿import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: 'com.marinefix.app',
-  appName: 'Marine Fix',
-  webDir: 'dist',
-  server: {
-    url: 'https://marinefixapp.pages.dev',
-    cleartext: true
-  }
+  appId: "com.marinefix.app",
+  appName: "Marine Fix",
+  webDir: "dist",
 };
 
 export default config;

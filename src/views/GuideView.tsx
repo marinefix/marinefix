@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronRight,
   ArrowLeft,
@@ -26,6 +26,11 @@ import {
 import { navigate } from "../lib/router";
 import { Lightbox } from "../components/Lightbox";
 import { checkIsAdmin } from "../lib/adminAuth";
+import * as pdfjsLib from "pdfjs-dist";
+import {
+  getOfflineAttachmentUrl,
+  resolveRemoteUrl,
+} from "../lib/offlineStorage";
 
 type Props = {
   guideId: string;
@@ -45,6 +50,14 @@ export function GuideView({
   const [deletingGuide, setDeletingGuide] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [isAdmin, setIsAdmin] = useState(checkIsAdmin());
+  const [resolvedAttachmentUrls, setResolvedAttachmentUrls] = useState<Record<string, string>>({});
+  const [pdfViewerOpen, setPdfViewerOpen] = useState(false);
+  const [pdfViewerName, setPdfViewerName] = useState("");
+  const [pdfViewerLoading, setPdfViewerLoading] = useState(false);
+  const [pdfViewerError, setPdfViewerError] = useState<string | null>(null);
+  const [pendingPdf, setPendingPdf] = useState<{ url: string; name: string } | null>(null);
+  const pdfCanvasRef = useRef<HTMLDivElement | null>(null);
+  const pdfObjectUrlsRef = useRef<string[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -56,11 +69,22 @@ export function GuideView({
       .then((g) => {
         if (!active) return;
 
-        setGuide(g);
+        if (g) {
+          setGuide(g);
 
-        // If already saved, refresh the local copy and attachments.
-        if (isBookmarked && g) {
-          void saveGuideOffline(g);
+          // If already saved, refresh the local copy and attachments.
+          if (isBookmarked) {
+            void saveGuideOffline(g);
+          }
+        } else {
+          // API unavailable / offline -> load saved local guide.
+          const cached = getOfflineGuideById(guideId);
+
+          if (cached) {
+            setGuide(cached);
+          } else {
+            setError("Guide not found.");
+          }
         }
       })
       .catch((e) => {
@@ -98,6 +122,185 @@ export function GuideView({
       );
     };
   }, [guideId, isBookmarked]);
+
+  useEffect(() => {
+    let active = true;
+    const createdObjectUrls: string[] = [];
+
+    async function resolveAttachments() {
+      if (!guide) {
+        setResolvedAttachmentUrls({});
+        return;
+      }
+
+      const urls: string[] = [];
+      const addUrl = (value: any) => {
+        if (typeof value === "string" && value.trim()) {
+          urls.push(resolveRemoteUrl(value.trim()));
+          return;
+        }
+        if (value && typeof value === "object") {
+          const url =
+            value.url ||
+            value.image_url ||
+            value.image ||
+            value.publicUrl ||
+            "";
+          if (typeof url === "string" && url.trim()) {
+            urls.push(resolveRemoteUrl(url.trim()));
+          }
+        }
+      };
+
+      if (Array.isArray(guide.images)) guide.images.forEach(addUrl);
+      if (Array.isArray(guide.steps)) {
+        guide.steps.forEach((step: any) => {
+          let raw = step?.images || step?.step_images || [];
+          if (typeof raw === "string") {
+            try {
+              raw = JSON.parse(raw);
+            } catch {
+              raw = [];
+            }
+          }
+          if (Array.isArray(raw)) raw.forEach(addUrl);
+        });
+      }
+
+      const resolved: Record<string, string> = {};
+
+      await Promise.all(
+        [...new Set(urls)].map(async (url) => {
+          const displayUrl = await getOfflineAttachmentUrl(url);
+          resolved[url] = displayUrl;
+          if (displayUrl.startsWith("blob:")) {
+            createdObjectUrls.push(displayUrl);
+          }
+        })
+      );
+
+      if (active) setResolvedAttachmentUrls(resolved);
+    }
+
+    void resolveAttachments();
+
+    return () => {
+      active = false;
+      createdObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [guide]);
+
+  useEffect(() => {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/build/pdf.worker.min.mjs",
+      import.meta.url
+    ).toString();
+  }, []);
+
+  useEffect(() => {
+    if (!pdfViewerOpen || !pendingPdf || !pdfCanvasRef.current) return;
+
+    let active = true;
+
+    async function renderPdf() {
+      setPdfViewerLoading(true);
+      setPdfViewerError(null);
+
+      try {
+        const displayUrl = await getOfflineAttachmentUrl(
+          resolveRemoteUrl(pendingPdf!.url)
+        );
+
+        const response = await fetch(displayUrl, {
+          method: "GET",
+          mode: "cors",
+          credentials: "omit",
+        });
+
+        if (!response.ok) {
+          throw new Error(`Unable to load PDF (${response.status})`);
+        }
+
+        const data = await response.arrayBuffer();
+        if (!active || !pdfCanvasRef.current) return;
+
+        pdfCanvasRef.current.innerHTML = "";
+
+        const loadingTask = pdfjsLib.getDocument({ data });
+        const pdf = await loadingTask.promise;
+
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          if (!active || !pdfCanvasRef.current) return;
+
+          const page = await pdf.getPage(pageNumber);
+          const viewport = page.getViewport({ scale: 1.35 });
+          const wrapper = document.createElement("div");
+          wrapper.className =
+            "mb-4 w-full flex justify-center bg-slate-900 rounded-lg overflow-hidden";
+
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d");
+          if (!context) continue;
+
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          canvas.className = "max-w-full h-auto";
+
+          wrapper.appendChild(canvas);
+          pdfCanvasRef.current.appendChild(wrapper);
+
+          page.render({
+            canvasContext: context,
+            viewport,
+            canvas,
+          });
+        }
+
+        if (displayUrl.startsWith("blob:")) {
+          pdfObjectUrlsRef.current.push(displayUrl);
+        }
+      } catch (err) {
+        if (active) {
+          console.error("PDF viewer error:", err);
+          setPdfViewerError(
+            err instanceof Error ? err.message : "Failed to open PDF."
+          );
+        }
+      } finally {
+        if (active) setPdfViewerLoading(false);
+      }
+    }
+
+    void renderPdf();
+
+    return () => {
+      active = false;
+    };
+  }, [pdfViewerOpen, pendingPdf]);
+
+  function openPdf(url: string, name: string) {
+    setPdfViewerName(name || "PDF Document");
+    setPdfViewerError(null);
+    setPendingPdf({
+      url: resolveRemoteUrl(url),
+      name: name || "PDF Document",
+    });
+    setPdfViewerOpen(true);
+  }
+
+  function closePdfViewer() {
+    setPdfViewerOpen(false);
+    setPendingPdf(null);
+    setPdfViewerError(null);
+    setPdfViewerLoading(false);
+
+    if (pdfCanvasRef.current) {
+      pdfCanvasRef.current.innerHTML = "";
+    }
+
+    pdfObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    pdfObjectUrlsRef.current = [];
+  }
 
   async function toggleBookmark() {
     if (!guide) return;
@@ -222,6 +425,8 @@ export function GuideView({
       name = val.name || val.caption || "";
     }
 
+    url = resolveRemoteUrl(url);
+
     return { url, isPdf, name };
   };
 
@@ -290,16 +495,23 @@ export function GuideView({
     }
   });
 
-  const lightboxUrls = lightboxItems.map((i) => i.url);
+  function displayAttachmentUrl(url: string): string {
+    const absolute = resolveRemoteUrl(url);
+    return resolvedAttachmentUrls[absolute] || absolute;
+  }
+
+  const lightboxUrls = lightboxItems.map((i) =>
+    displayAttachmentUrl(i.url)
+  );
   const lightboxCaptions = lightboxItems.map((i) => i.name);
 
   function openLightboxByUrl(targetUrl: string) {
-    const idx = lightboxUrls.indexOf(targetUrl);
+    const idx = lightboxUrls.indexOf(displayAttachmentUrl(targetUrl));
 
     if (idx !== -1) {
       setLightboxIndex(idx);
     } else {
-      lightboxUrls.push(targetUrl);
+      lightboxUrls.push(displayAttachmentUrl(targetUrl));
       lightboxCaptions.push("Schematic Drawing");
       setLightboxIndex(lightboxUrls.length - 1);
     }
@@ -606,15 +818,19 @@ export function GuideView({
                                       </span>
                                     </div>
 
-                                    <a
-                                      href={parsed.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openPdf(
+                                          parsed.url,
+                                          parsed.name || `Step ${stepNum} Document`
+                                        )
+                                      }
                                       className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-500/20 text-rose-300 print:text-rose-700 hover:bg-rose-500/30 border border-rose-500/30 rounded-lg text-[11px] font-bold transition shrink-0"
                                     >
                                       <ExternalLink className="h-3 w-3" />
                                       View PDF
-                                    </a>
+                                    </button>
                                   </div>
                                 ) : (
                                   <button
@@ -626,7 +842,7 @@ export function GuideView({
                                     title="Click to Zoom Fullscreen"
                                   >
                                     <img
-                                      src={parsed.url}
+                                      src={displayAttachmentUrl(parsed.url)}
                                       alt={`Step ${stepNum}`}
                                       loading="lazy"
                                       decoding="async"
@@ -674,15 +890,19 @@ export function GuideView({
                         </span>
                       </div>
 
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openPdf(
+                            item.url,
+                            item.name || "PDF Schematic Document"
+                          )
+                        }
                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-500/20 text-rose-300 print:text-rose-700 hover:bg-rose-500/30 border border-rose-500/30 rounded-lg text-xs font-bold transition"
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                         View PDF
-                      </a>
+                      </button>
                     </div>
                   ) : (
                     <button
@@ -692,7 +912,7 @@ export function GuideView({
                       title="Click to Zoom Fullscreen"
                     >
                       <img
-                        src={item.url}
+                        src={displayAttachmentUrl(item.url)}
                         alt={item.name || "Schematic"}
                         loading="lazy"
                         decoding="async"
@@ -706,6 +926,47 @@ export function GuideView({
           </section>
         )}
       </article>
+
+      {pdfViewerOpen && (
+        <div className="fixed inset-0 z-[100] bg-black/90 flex flex-col print:hidden">
+          <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-3 bg-marine-card border-b border-marine-border">
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-bold text-marine-text truncate">
+                {pdfViewerName}
+              </h3>
+              <p className="text-[11px] text-marine-muted">PDF Viewer</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={closePdfViewer}
+              className="shrink-0 px-3 py-2 rounded-lg bg-marine-dark text-marine-text border border-marine-border hover:border-marine-accent transition text-xs font-bold"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+            {pdfViewerLoading && (
+              <div className="flex items-center justify-center py-20 text-marine-muted">
+                <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                Loading PDF...
+              </div>
+            )}
+
+            {pdfViewerError && !pdfViewerLoading && (
+              <div className="max-w-xl mx-auto mt-10 p-5 rounded-xl bg-marine-card border border-red-500/30 text-center">
+                <AlertCircle className="h-8 w-8 text-red-400 mx-auto mb-3" />
+                <p className="text-sm text-red-300 break-words">
+                  {pdfViewerError}
+                </p>
+              </div>
+            )}
+
+            <div ref={pdfCanvasRef} className="max-w-4xl mx-auto" />
+          </div>
+        </div>
+      )}
 
       {lightboxIndex !== null && lightboxUrls.length > 0 && (
         <Lightbox

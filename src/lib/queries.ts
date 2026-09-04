@@ -4,10 +4,17 @@ import type {
   Guide,
   GuideWithRelations,
 } from "../types";
+import { getOfflineGuides } from "./offlineStorage";
 
-// Helper function for Cloudflare Pages API calls
-async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = endpoint.startsWith("http") ? endpoint : endpoint;
+const API_BASE_URL = "https://marinefixapp.pages.dev";
+
+async function apiFetch<T>(
+  endpoint: string,
+  options?: RequestInit
+): Promise<T> {
+  const url = endpoint.startsWith("http")
+    ? endpoint
+    : `${API_BASE_URL}${endpoint}`;
 
   const res = await fetch(url, options);
 
@@ -23,10 +30,13 @@ export async function fetchCategories(): Promise<Category[]> {
   return apiFetch<Category[]>("/api/categories");
 }
 
-export async function fetchEquipment(categoryId?: string): Promise<Equipment[]> {
+export async function fetchEquipment(
+  categoryId?: string
+): Promise<Equipment[]> {
   const url = categoryId
     ? `/api/equipment?category_id=${encodeURIComponent(categoryId)}`
     : "/api/equipment";
+
   return apiFetch<Equipment[]>(url);
 }
 
@@ -42,16 +52,21 @@ export async function fetchEquipmentById(
   id: string
 ): Promise<Equipment | null> {
   try {
-    return await apiFetch<Equipment>(`/api/equipment?id=${encodeURIComponent(id)}`);
+    return await apiFetch<Equipment>(
+      `/api/equipment?id=${encodeURIComponent(id)}`
+    );
   } catch {
     return null;
   }
 }
 
-export async function fetchGuides(equipmentId?: string): Promise<Guide[]> {
+export async function fetchGuides(
+  equipmentId?: string
+): Promise<Guide[]> {
   const url = equipmentId
     ? `/api/guides?equipment_id=${encodeURIComponent(equipmentId)}`
     : "/api/guides";
+
   return apiFetch<Guide[]>(url);
 }
 
@@ -80,13 +95,22 @@ export type SearchResult = {
   equipment: Equipment[];
 };
 
-export async function searchAll(query: string): Promise<SearchResult> {
+export async function searchAll(
+  query: string
+): Promise<SearchResult> {
   const q = query.trim();
-  if (!q) return { guides: [], equipment: [] };
-  return apiFetch<SearchResult>(`/api/search?q=${encodeURIComponent(q)}`);
+
+  if (!q) {
+    return { guides: [], equipment: [] };
+  }
+
+  return apiFetch<SearchResult>(
+    `/api/search?q=${encodeURIComponent(q)}`
+  );
 }
 
-// ---------------- BOOKMARKS (Hybrid: Cloudflare D1 + Offline LocalStorage) ----------------
+// ---------------- BOOKMARKS ----------------
+
 const LOCAL_BOOKMARKS_KEY = "marinefix_local_bookmarks";
 
 function getLocalBookmarkIds(): string[] {
@@ -100,7 +124,10 @@ function getLocalBookmarkIds(): string[] {
 
 function saveLocalBookmarkIds(ids: string[]) {
   try {
-    localStorage.setItem(LOCAL_BOOKMARKS_KEY, JSON.stringify(ids));
+    localStorage.setItem(
+      LOCAL_BOOKMARKS_KEY,
+      JSON.stringify(ids)
+    );
   } catch (e) {
     console.error("LocalStorage save error:", e);
   }
@@ -108,83 +135,125 @@ function saveLocalBookmarkIds(ids: string[]) {
 
 export async function fetchBookmarkIds(): Promise<string[]> {
   try {
-    const res = await apiFetch<{ ids: string[] }>("/api/bookmarks?ids_only=true");
+    const res = await apiFetch<{ ids: string[] }>(
+      "/api/bookmarks?ids_only=true"
+    );
+
     const serverIds = res.ids || [];
     const localIds = getLocalBookmarkIds();
-    const merged = Array.from(new Set([...serverIds, ...localIds]));
-    saveLocalBookmarkIds(merged);
-    return merged;
+
+    // When online, the server is authoritative. Do not merge stale local IDs,
+    // otherwise a deleted bookmark can reappear after reopening the app.
+    saveLocalBookmarkIds(serverIds);
+
+    return serverIds;
   } catch {
     return getLocalBookmarkIds();
   }
 }
 
-export async function fetchBookmarkedGuides(): Promise<GuideWithRelations[]> {
+export async function fetchBookmarkedGuides(): Promise<
+  GuideWithRelations[]
+> {
   try {
-    const serverGuides = await apiFetch<GuideWithRelations[]>("/api/bookmarks");
-    if (serverGuides && serverGuides.length > 0) return serverGuides;
+    const serverGuides =
+      await apiFetch<GuideWithRelations[]>("/api/bookmarks");
+
+    // An empty server list is a valid result when there are no bookmarks.
+    // Do not fall back to offline guides while the API is reachable.
+    return serverGuides || [];
   } catch (err) {
-    console.warn("Server bookmark fetch failed, falling back to cached guides:", err);
+    console.warn(
+      "Server bookmark fetch failed, using offline guides:",
+      err
+    );
   }
 
-  // Fallback to local fetch guide by IDs
-  const localIds = getLocalBookmarkIds();
-  const guides: GuideWithRelations[] = [];
-  for (const id of localIds) {
-    const g = await fetchGuideById(id);
-    if (g) guides.push(g);
-  }
-  return guides;
+  // TRUE OFFLINE FALLBACK
+  const offlineGuides = getOfflineGuides();
+
+  return Object.values(offlineGuides) as GuideWithRelations[];
 }
 
-export async function addBookmark(guideId: string): Promise<void> {
-  // 1. Save locally first for instant offline access
+export async function addBookmark(
+  guideId: string
+): Promise<void> {
   const localIds = getLocalBookmarkIds();
+
   if (!localIds.includes(guideId)) {
     saveLocalBookmarkIds([...localIds, guideId]);
   }
 
-  // 2. Sync to Server D1 database (background try)
   try {
     await apiFetch("/api/bookmarks", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ guide_id: guideId }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        guide_id: guideId,
+      }),
     });
   } catch (err) {
-    console.warn("Backend bookmark sync failed, preserved locally:", err);
+    console.warn(
+      "Backend bookmark sync failed, preserved locally:",
+      err
+    );
   }
 }
 
-export async function removeBookmark(guideId: string): Promise<void> {
-  // 1. Remove locally
-  const localIds = getLocalBookmarkIds().filter((id) => id !== guideId);
+export async function removeBookmark(
+  guideId: string
+): Promise<void> {
+  const localIds = getLocalBookmarkIds().filter(
+    (id) => id !== guideId
+  );
+
   saveLocalBookmarkIds(localIds);
 
-  // 2. Remove from Server D1
   try {
-    await apiFetch(`/api/bookmarks?guide_id=${encodeURIComponent(guideId)}`, {
-      method: "DELETE",
-    });
+    await apiFetch(
+      `/api/bookmarks?guide_id=${encodeURIComponent(guideId)}`,
+      {
+        method: "DELETE",
+      }
+    );
   } catch (err) {
-    console.warn("Backend bookmark delete sync failed:", err);
+    console.warn(
+      "Backend bookmark delete sync failed:",
+      err
+    );
   }
 }
 
-export async function uploadImage(file: File): Promise<string> {
+// ---------------- UPLOAD ----------------
+
+export async function uploadImage(
+  file: File
+): Promise<string> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const res = await fetch("/api/upload", {
-    method: "POST",
-    body: formData,
-  });
+  const res = await fetch(
+    `${API_BASE_URL}/api/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
 
-  if (!res.ok) throw new Error("Failed to upload image to R2");
+  if (!res.ok) {
+    throw new Error("Failed to upload image to R2");
+  }
 
-  const data = (await res.json()) as { url: string };
+  const data = (await res.json()) as {
+    url: string;
+  };
+
   return data.url;
 }
+
+// ---------------- GUIDE CREATE ----------------
 
 export async function createGuide(input: {
   equipment_id: string;
@@ -195,43 +264,67 @@ export async function createGuide(input: {
   safety_ppe?: string[];
   tools_required?: string[];
   introduction?: string;
+
   steps: {
     title: string;
     instruction: string;
     warning?: string;
     images?: any[];
   }[];
-  image_urls: { url: string; caption?: string }[];
+
+  image_urls: {
+    url: string;
+    caption?: string;
+  }[];
+
   status?: string;
   is_approved?: boolean;
 }): Promise<Guide> {
   return apiFetch<Guide>("/api/guides", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify(input),
   });
 }
 
+// ---------------- ADMIN ----------------
+
 export async function getPendingGuides(): Promise<
   (Guide & { equipment?: Equipment })[]
 > {
-  return apiFetch<(Guide & { equipment?: Equipment })[]>(
-    "/api/guides?pending=true"
-  );
+  return apiFetch<
+    (Guide & { equipment?: Equipment })[]
+  >("/api/guides?pending=true");
 }
 
-export async function approveGuide(guideId: string): Promise<void> {
+export async function approveGuide(
+  guideId: string
+): Promise<void> {
   await apiFetch("/api/guides", {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: guideId, action: "approve" }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      id: guideId,
+      action: "approve",
+    }),
   });
 }
 
-export async function rejectGuide(guideId: string): Promise<void> {
+export async function rejectGuide(
+  guideId: string
+): Promise<void> {
   await apiFetch("/api/guides", {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: guideId, action: "reject" }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      id: guideId,
+      action: "reject",
+    }),
   });
 }
