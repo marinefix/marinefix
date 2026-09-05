@@ -493,7 +493,7 @@ export function AddGuideView({
       <form onSubmit={submit} className="space-y-6">
         {/* Author Contact Details Card */}
         <div className="p-5 rounded-xl border border-marine-accent/30 bg-marine-accent/5 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-xs font-bold text-marine-accent uppercase tracking-wider flex items-center gap-1.5">
               <Mail className="h-4 w-4" /> Author Contact Details
             </h3>
@@ -537,19 +537,19 @@ export function AddGuideView({
         {/* Equipment Selection */}
         <Field label="Equipment *">
           {equipmentId && currentEquipment ? (
-            <div className="flex items-center justify-between p-3.5 rounded-xl bg-marine-accent/10 border border-marine-accent/40 text-marine-text">
-              <div className="flex items-center gap-2.5">
-                <span className="font-semibold text-marine-accent">
+            <div className="flex flex-col gap-2.5 p-3.5 rounded-xl bg-marine-accent/10 border border-marine-accent/40 text-marine-text sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 flex flex-wrap items-center gap-2.5">
+                <span className="font-semibold text-marine-accent break-words">
                   {currentEquipment.name}
                 </span>
                 {currentCategory && (
-                  <span className="text-xs px-2 py-0.5 rounded-md bg-marine-dark/80 text-marine-muted border border-marine-border">
+                  <span className="shrink-0 text-xs px-2 py-0.5 rounded-md bg-marine-dark/80 text-marine-muted border border-marine-border">
                     {currentCategory.name}
                   </span>
                 )}
               </div>
-              <span className="flex items-center gap-1 text-xs text-marine-muted font-medium bg-marine-dark/50 px-2 py-1 rounded">
-                <Lock className="h-3 w-3 text-marine-accent" /> Locked
+              <span className="self-start shrink-0 inline-flex items-center gap-1 text-xs text-marine-muted font-medium bg-marine-dark/50 px-2 py-1 rounded sm:self-auto">
+                <Lock className="h-3 w-3 text-marine-accent shrink-0" /> Locked
               </span>
             </div>
           ) : (
