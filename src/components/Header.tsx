@@ -137,7 +137,7 @@ export function Header({ onToggleMobileMenu }: HeaderProps) {
           <div className="flex items-center gap-2 shrink-0">
             {!isApp && (
               <a
-                href="/MarineFix.apk"
+                href="https://marinefixapp.pages.dev/api/upload?key=MarineFix.apk"
                 download="MarineFix.apk"
                 className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-marine-accent/10 text-marine-accent border border-marine-accent/30 hover:bg-marine-accent hover:text-marine-base transition cursor-pointer"
                 title="Download Marine Fix Android App"

@@ -122,7 +122,7 @@ export function HomeView({ categories, equipment, totalGuides }: Props) {
               {/* Direct APK Download Button - Hidden inside Installed App */}
               {!isApp && (
                 <a
-                  href="/MarineFix.apk"
+                  href="https://marinefixapp.pages.dev/api/upload?key=MarineFix.apk"
                   download="MarineFix.apk"
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs tracking-wide shadow-lg shadow-emerald-950/40 transition-all cursor-pointer border border-emerald-400/30"
                   title="Download Marine Fix APK"
